@@ -1,5 +1,5 @@
-// Round runtime: mosquitoes (brain + visual + voice), swatter swing & contacts, doors, hints, bites,
-// eye adaptation between rooms and outdoors, completion and saving.
+// Round runtime: smileys (brain + visual + flutter), net swing & contacts, catching (into the bag, then into the jar),
+// doors, hints, eye adaptation between rooms and outdoors, completion and saving.
 import type { Core } from './core';
 import { PLAYER, POSTURE } from '../physics/player';
 import type { AudioEngine } from '../audio/audio';
@@ -7,11 +7,11 @@ import { SURFACE_CLASSES, type Surface } from '../audio/audio';
 import type { Save } from './save';
 import { ROUNDS, PRACTICE, type RoundDef, type Spawn } from './rounds';
 import { settleLeaves } from './doors';
-import { MosquitoBrain, type Threat } from '../mosquito/brain';
-import { MosquitoVisual } from '../mosquito/visual';
-import { SwingSystem, restPose, type CamFrame, type ContactInfo, type MosquitoTarget, type V3 } from '../swatter/swing';
-import { ArmVisual } from '../swatter/visual';
-import { TIPTOE, lookTiptoe } from '../swatter/armgeom';
+import { SmileyBrain, type Threat } from '../smiley/brain';
+import { SmileyVisual } from '../smiley/visual';
+import { SwingSystem, restPose, type CamFrame, type ContactInfo, type SmileyTarget, type V3 } from '../net/swing';
+import { ArmVisual } from '../net/visual';
+import { TIPTOE, lookTiptoe } from '../net/armgeom';
 import { ROOM_BOXES, roomAt } from '../engine/world';
 import type { RayHit } from '../physics/bvh';
 import { adaptTemperatureTint } from '../engine/whitebalance';
@@ -22,11 +22,14 @@ export interface SessionUI {
   onToast(msg: string, ms?: number): void;
   onObjective(label: string, text: string): void;
   onHint(text: string): void;
-  onBites(n: number): void;
+  /** caught so far and how many the round has */
+  onCaught(n: number, total: number): void;
   onDoorCtx(label: string | null): void;
 }
 
-interface Mosq { brain: MosquitoBrain; vis: MosquitoVisual; prev: V3; freq: number; deadAt: number; }
+interface Smiley { brain: SmileyBrain; vis: SmileyVisual; prev: V3; deadAt: number; caughtAt: number; }
+/** seconds a caught smiley flutters in the net before it goes into the jar */
+export const IN_NET = 1.8;
 
 const hit: RayHit = { t: 0, tri: 0, nx: 0, ny: 0, nz: 0 };
 /** Eye adaptation (REVIEW-01 G-05). exposure = KEY * (L/L0)^g / L with L = baked log-average luminance (probes / sky,
@@ -58,14 +61,14 @@ export function exposureFor(L: number): number {
 }
 
 const SOFT: Surface[] = ['fabric', 'leaves', 'plant', 'grass'];
-/** A resting mosquito whose curtain moves more than this (m) under it flies off. */
+/** A resting smiley whose curtain moves more than this (m) under it flies off. */
 const CURTAIN_STARTLE = 0.01;
-/** Room of a mosquito. A resting one counts by the air side of its surface: a window pane lies a few cm outside the
- * room boxes, and a mosquito sitting on the inside of the glass was announced as buzzing 'buiten' (REVIEW-01 G-09). */
-export function mosquitoRoom(b: { state: string; x: number; z: number; nx: number; nz: number }): string {
+/** Room of a smiley. A resting one counts by the air side of its surface: a window pane lies a few cm outside the
+ * room boxes, and one sitting on the inside of the glass counts for the room (REVIEW-01 G-09). */
+export function smileyRoom(b: { state: string; x: number; z: number; nx: number; nz: number }): string {
   return b.state === 'rest' ? roomAt(b.x + b.nx * 0.15, b.z + b.nz * 0.15) : roomAt(b.x, b.z);
 }
-/** More than 20 cm outside every room (a mosquito at the inside of a window or door pane is not). */
+/** More than 20 cm outside every room (a smiley at the inside of a window or door pane is not). */
 function clearlyOutside(x: number, z: number): boolean {
   for (const [id, [x0, z0, x1, z1]] of Object.entries(ROOM_BOXES)) {
     if (id !== 'buiten' && x > x0 - 0.2 && x < x1 + 0.2 && z > z0 - 0.2 && z < z1 + 0.2) return false;
@@ -80,10 +83,10 @@ const ROOM_NAMES: Record<string, string> = {
 export class Session {
   active = false; paused = false; practice = false; roundIndex = 0;
   round: RoundDef = ROUNDS[0];
-  mosq: Mosq[] = [];
+  smileys: Smiley[] = [];
   swing: SwingSystem;
   arm = new ArmVisual();
-  t = 0; bites = 0; kills = 0; lastProgress = 0;
+  t = 0; caught = 0; lastProgress = 0;
   helpLevel: 'uit' | 'licht' | 'veel' = 'licht';
   exposure = 1;
   private wbMired = 1e6 / 6500; private wbTint = 0;
@@ -93,7 +96,7 @@ export class Session {
   private incomingLeft = 0; private incomingTimer = 0;
   private stepPhase = 0; private endTimer = -1;
   private idCounter = 1; private whooshed = false;
-  /** practice: room the last mosquito came from (the next one comes from another) */
+  /** practice: room the last smiley came from (the next one comes from another) */
   private lastPracticeRoom = '';
   private armLoaded: Promise<void>;
   private threat: Threat = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, active: false };
@@ -101,8 +104,9 @@ export class Session {
 
   constructor(public core: Core, public audio: AudioEngine, public save: Save, public ui: SessionUI) {
     this.swing = new SwingSystem(core.world.bvh, (o, d, max) => this.doorRay(o.x, o.y, o.z, d.x, d.y, d.z, max));
+    this.arm.bvh = core.world.bvh;
     core.onUpdate((dt) => this.update(dt));
-    // the drawn arm keeps out of walls and furniture (the swatter chain itself is resolved in SwingSystem)
+    // the drawn arm keeps out of walls and furniture (the net's chain itself is resolved in SwingSystem)
     const tmp = new Float32Array(3), bvh = core.world.bvh;
     this.arm.armDepth = (a, b, r) => {
       let worst = 0;
@@ -123,7 +127,7 @@ export class Session {
       }
       return worst;
     };
-    // once the arm is in, warm the mirror again: the arm and swatter show in it too
+    // once the arm is in, warm the mirror again: the arm and the net show in it too
     this.armLoaded = this.arm.load(core.scene).then(() => core.world.warmUp()).catch((e) => { console.error('arm', e); });
   }
 
@@ -135,7 +139,7 @@ export class Session {
     this.roundIndex = index; this.practice = practice;
     const r = this.round = ROUNDS[index];
     await this.core.world.prepareState(r.light);      // lightmaps + start-room probes of this light state are in
-    this.t = 0; this.bites = 0; this.kills = 0; this.lastProgress = 0; this.endTimer = -1; this.swing.swings = 0;
+    this.t = 0; this.caught = 0; this.lastProgress = 0; this.endTimer = -1; this.swing.swings = 0;
     this.core.world.setState(r.light);
     this.core.placePlayer(r.player.x, r.player.z, r.player.yaw);
     // the round's door angles; two leaves set against or through each other are settled (the wc and kids-room-1 doors
@@ -144,16 +148,16 @@ export class Session {
     for (const d of doors) { d.angle = d.target = start?.[d.id] ?? 0; d.moving = false; }
     settleLeaves(doors);
     for (const d of doors) d.node.rotation.y = d.closedYaw + d.angle * d.openSign;
-    this.mosq = [];
-    // practice: one mosquito at a time, somewhere in the chalet (respawn)
-    const spawns: Spawn[] = practice ? [this.practiceSpawn()] : r.mosquitoes;
+    this.smileys = [];
+    // practice: one smiley at a time, somewhere in the chalet (respawn)
+    const spawns: Spawn[] = practice ? [this.practiceSpawn()] : r.smileys;
     for (const s of spawns) this.spawn(s, r);
     this.incomingLeft = practice ? 0 : r.incoming?.count ?? 0; this.incomingTimer = 2;
     this.adaptNow(this.core.player.x, this.core.player.z);
     this.audio.startAmbience(r.light);
     this.ui.onObjective(practice ? 'Oefenen' : `Ronde ${index + 1} · ${r.place}`, practice ? 'Vrij oefenen in het hele chalet' : r.objective);
-    this.ui.onToast(practice ? 'Oefenen: steeds één mug, ergens in het chalet.' : r.intro, 2600);
-    this.ui.onBites(0); this.ui.onHint('');
+    this.ui.onToast(practice ? 'Oefenen: steeds één smiley, ergens in het chalet.' : r.intro, 2600);
+    this.ui.onCaught(0, this.total()); this.ui.onHint('');
     this.active = true; this.paused = false;
     this.core.running = true; this.core.input.enabled = true;
     this.core.metrics.event('round-start', { round: r.id, practice, light: this.core.world.shownState });
@@ -162,13 +166,13 @@ export class Session {
   private spawn(s: Spawn, r: RoundDef, from?: [number, number, number]) {
     const id = this.idCounter++;
     const bvh = this.core.world.bvh;
-    const b = new MosquitoBrain(bvh, { alert: r.alert, hostDrive: r.hostDrive, restMin: r.rest[0], restMax: r.rest[1], speed: r.speed,
+    const b = new SmileyBrain(bvh, { alert: r.alert, restMin: r.rest[0], restMax: r.rest[1], speed: r.speed,
       roomBias: r.limitRoom ? ROOM_BOXES[r.limitRoom] : null }, id, (ox, oy, oz, dx, dy, dz, max) => this.doorRay(ox, oy, oz, dx, dy, dz, max));
     const box = ROOM_BOXES[s.room] ?? ROOM_BOXES.woon;
     if (from) {
-      // enters through the open terrace door, flying toward the room
+      // flutters in through the open terrace door, toward the room
       b.x = from[0]; b.y = from[1]; b.z = from[2]; b.setState('fly', 6 + Math.random() * 4);
-      b.tx = 4.5; b.ty = 1.5; b.tz = -1.2; b.vz = -0.4;
+      b.tx = 4.5; b.ty = 1.5; b.tz = -1.2; b.vz = -0.5;
     } else if (s.near && s.resting) {
       // snap to the nearest real surface around the requested point (rounds name the spot, the mesh decides)
       const [px, py, pz] = s.near;
@@ -188,19 +192,19 @@ export class Session {
       b.setState('fly', 3 + Math.random() * 5);
       if (s.resting) b.beginLanding({ x: 99, y: 99, z: 99 });
     }
-    const vis = new MosquitoVisual(this.core.scene, id);
-    this.mosq.push({ brain: b, vis, prev: { x: b.x, y: b.y, z: b.z }, freq: 390 + Math.random() * 90, deadAt: -1 });
+    const vis = new SmileyVisual(this.core.scene, id);
+    this.smileys.push({ brain: b, vis, prev: { x: b.x, y: b.y, z: b.z }, deadAt: -1, caughtAt: -1 });
   }
 
   pause() {
     if (!this.active) return;
     this.paused = true; this.core.running = false; this.core.input.enabled = false; this.core.input.reset();
-    this.audio.stopAllMosquitoes(); this.audio.suspend();
+    this.audio.stopAllSmileys(); this.audio.suspend();
   }
   resume() { if (!this.active) return; this.paused = false; this.audio.resume(); this.core.running = true; this.core.input.enabled = true; }
   stop() {
-    for (const m of this.mosq) m.vis.dispose();
-    this.mosq = []; this.audio.stopAllMosquitoes(); this.audio.stopAmbience();
+    for (const m of this.smileys) { m.vis.dispose(); this.arm.bag?.setLoad(m.brain.id, null); }
+    this.smileys = []; this.audio.stopAllSmileys(); this.audio.stopAmbience();
     this.swing.swing = null;
     this.active = false; this.paused = false; this.core.running = false; this.core.input.enabled = false;
   }
@@ -312,9 +316,9 @@ export class Session {
     return exposureFor(L);
   }
 
-  private targets(): MosquitoTarget[] {
+  private targets(): SmileyTarget[] {
     const kind = this.core.world.bvh.kind;
-    return this.mosq.map((m, i) => ({ idx: i, pos: { x: m.brain.x, y: m.brain.y, z: m.brain.z }, prev: m.prev, alive: m.brain.alive,
+    return this.smileys.map((m, i) => ({ idx: i, pos: { x: m.brain.x, y: m.brain.y, z: m.brain.z }, prev: m.prev, alive: m.brain.alive,
       resting: m.brain.state === 'rest', nrm: { x: m.brain.nx, y: m.brain.ny, z: m.brain.nz },
       soft: m.brain.state === 'rest' && m.brain.tri >= 0 && kind[m.brain.tri] === 3 }));
   }
@@ -333,7 +337,7 @@ export class Session {
       inp.swatQueued = false;
       const d = this.aimDir(cf, inp.swatScreen); inp.swatScreen = null;
       // room to lean the upper body toward the target: what is in front of the chest; and to step back from a target
-      // too close in front for the swatter's length: what is behind the chest and the head (door leaves included)
+      // too close in front for the net's length: what is behind the chest and the head (door leaves included)
       const fx = Math.cos(core.yaw), fz = -Math.sin(core.yaw);
       const leanMax = core.world.bvh.raycast(cf.eye.x, cf.eye.y - 0.35, cf.eye.z, fx, 0, fz, 0.8, hit, 1 | 4 | 8) ? Math.min(0.32, Math.max(0, hit.t - 0.3)) : 0.32;
       let behind = 0.6;
@@ -374,44 +378,58 @@ export class Session {
         core.metrics.event('door', { id: door.id, open: door.target > 0.05 });
       }
     }
-    // --- mosquitoes (threat = swatter head while a swing is under way)
+    // --- smileys (threat = the net's hoop while a swing is under way)
     const host = { x: cf.eye.x, y: cf.eye.y, z: cf.eye.z };
     const th = this.threat, sp = this.swing.pose;
     th.active = !!this.swing.swing && !!sp; th.swing = this.swing.swings;
     if (sp) { th.x = sp.h.x; th.y = sp.h.y; th.z = sp.h.z; }
     th.vx = this.swing.velocity.x; th.vy = this.swing.velocity.y; th.vz = this.swing.velocity.z;
     const hostSpeed = Math.hypot(core.player.vx, core.player.vz);
-    for (const m of this.mosq) {
+    for (const m of this.smileys) {
       m.prev = { x: m.brain.x, y: m.brain.y, z: m.brain.z };
-      const bounds = ROOM_BOXES[mosquitoRoom(m.brain)] ?? ROOM_BOXES.woon;
+      const bounds = ROOM_BOXES[smileyRoom(m.brain)] ?? ROOM_BOXES.woon;
       m.brain.update(dt, host, th, bounds, hostSpeed);
       for (const ev of m.brain.events.splice(0)) {
-        if (ev === 'bite') {
-          this.bites++; this.ui.onBites(this.bites); this.ui.onToast('Au — gestoken.', 1600); this.audio.bite(); core.metrics.event('bite', { id: m.brain.id });
-        } else if (ev === 'landed') core.metrics.event('landed', { id: m.brain.id, cls: SURFACE_CLASSES[m.brain.surfaceClass] });
+        if (ev === 'landed') core.metrics.event('landed', { id: m.brain.id, cls: SURFACE_CLASSES[m.brain.surfaceClass] });
       }
-      // on a curtain that moves the mosquito goes along with the fabric (a squashed one stays on it); one that rests on
-      // it flies off once the fabric really moves under it
+      // on a curtain that moves the smiley goes along with the fabric; one that rests on it flies off once the fabric
+      // really moves under it
       const b = m.brain;
       let off: { x: number; y: number; z: number } | undefined;
-      if ((b.state === 'rest' || b.state === 'squashed') && b.tri >= 0 && core.world.bvh.kind[b.tri] === 3) {
+      if (b.state === 'rest' && b.tri >= 0 && core.world.bvh.kind[b.tri] === 3) {
         off = core.world.curtains.displacementAt(b, this.offTmp) ?? undefined;
-        if (off && b.state === 'rest' && Math.hypot(off.x, off.y, off.z) > CURTAIN_STARTLE) b.takeoff();
+        if (off && Math.hypot(off.x, off.y, off.z) > CURTAIN_STARTLE) b.takeoff();
       }
-      m.vis.sync(b, this.t, cf.eye, off);
+      // caught: it beats about in the bag (and pushes the netting), then goes into the jar
+      let inNet: V3 | null = null;
+      if (b.state === 'caught') {
+        const bag = this.arm.bag;
+        if (bag) {
+          const k = b.struggling ? 18 : 0;
+          bag.setLoad(b.id, { x: (Math.random() - 0.5) * k, y: (Math.random() - 0.2) * k, z: (Math.random() - 0.5) * k });
+          inNet = bag.loadPos(b.id);
+        }
+        if (this.t - m.caughtAt > IN_NET) {
+          b.setState('jarred'); bag?.setLoad(b.id, null); m.deadAt = this.t;
+          this.audio.jar();
+          const left = this.smileys.filter((o) => o.brain.alive).length + this.incomingLeft;
+          this.ui.onToast(this.practice ? 'In de pot.' : left ? `In de pot. Nog ${left}.` : 'In de pot. Dat was de laatste.', 1600);
+        }
+      }
+      m.vis.sync(b, this.t, cf.eye, off, inNet);
     }
-    // --- swing physics & contacts (same time step as the mosquito motion)
+    // --- swing physics & contacts (same time step as the smiley motion)
     // lean follows the swing: in (or back) during wind-up/strike, hold briefly after contact, then straighten up
     const sw = this.swing.swing;
     const inSwing = !!sw && (sw.phase === 'windup' || sw.phase === 'strike' || sw.t < sw.tContact + 0.12);
     const leanGoal = inSwing ? this.leanTarget : 0;
     this.lean += (leanGoal - this.lean) * (1 - Math.exp(-dt / (Math.abs(leanGoal) > Math.abs(this.lean) ? 0.06 : 0.22)));
     // knees: during low swings, and when looking steeply down (to look under a bed or table)
-    // (only really steep: aiming at a door handle or a low mosquito from close by must not move the view)
+    // (only really steep: aiming at a door handle or a low smiley from close by must not move the view)
     const lookCrouch = Math.max(0, Math.min(1, (-core.pitch - 1.0) / 0.3)) * 0.35;
     const crouchGoal = Math.max(inSwing ? this.crouchTarget : 0, lookCrouch);
     this.crouch += (crouchGoal - this.crouch) * (1 - Math.exp(-dt / (crouchGoal > this.crouch ? 0.09 : 0.25)));
-    // toes: looking up (a mosquito on the ceiling) raises the view as standing on tiptoe does (standing, not bent down);
+    // toes: looking up (a smiley on the ceiling) raises the view as standing on tiptoe does (standing, not bent down);
     // the player's own posture can put you on the toes too; a high swing may rise the rest of the way
     const low = this.manualDrop(), standing = Math.max(0, 1 - low / 0.1);
     const toesGoal = Math.max(lookTiptoe(core.pitch) * standing, Math.max(0, core.stance) * TIPTOE, inSwing ? this.toesTarget : 0);
@@ -425,11 +443,11 @@ export class Session {
     const s = this.swing.swing;
     if (s && !this.whooshed && s.phase === 'strike') {
       const p = this.swing.pose.h, v = this.swing.velocity;
-      this.audio.whoosh(Math.hypot(v.x, v.y, v.z), p.x, p.y, p.z); this.whooshed = true;
+      this.audio.whoosh(Math.hypot(v.x, v.y, v.z) * 1.15, p.x, p.y, p.z); this.whooshed = true;
     }
     if (contact) this.onContact(contact);
-    this.arm.sync(this.swing.pose ?? rest, cf, hand, cf.eye.y - core.player.y);
-    // --- incoming mosquitoes through the open terrace door (round 4)
+    this.arm.sync(this.swing.pose ?? rest, cf, hand, cf.eye.y - core.player.y, dt);
+    // --- smileys fluttering in through the open terrace door (round 4)
     const inc = this.round.incoming;
     if (inc && this.incomingLeft > 0) {
       const doorOpen = (core.world.doors.find((d) => d.id === inc.untilDoorClosed)?.angle ?? 0) > 0.25;
@@ -437,34 +455,35 @@ export class Session {
       if (!doorOpen) { this.incomingLeft = 0; this.ui.onToast('Deur dicht. Er komen er geen meer bij.'); core.metrics.event('incoming-stopped'); }
       else if (this.incomingTimer <= 0) { this.spawn({ room: 'woon' }, this.round, inc.from); this.incomingLeft--; this.incomingTimer = inc.every; core.metrics.event('incoming'); }
     }
-    // --- a mosquito that flew out through the terrace door is out of play once the door is shut (REVIEW-01 G-13: round 4
-    // could only end by chasing it around the garden)
+    // --- a smiley that flew out through the terrace door is out of play once the door is shut (REVIEW-01 G-13: round 4
+    // could otherwise only end by chasing it around the garden)
     const terras = core.world.doors.find((d) => d.id === 'terras');
     if (terras && terras.angle < 0.05) {
-      for (const m of this.mosq) {
+      for (const m of this.smileys) {
         if (!m.brain.alive || !clearlyOutside(m.brain.x, m.brain.z)) continue;   // not one at the inside of a pane
-        m.brain.setState('gone'); this.audio.stopMosquito(m.brain.id); m.vis.root.setEnabled(false); m.deadAt = this.t;
+        m.brain.setState('gone'); this.audio.stopSmiley(m.brain.id); m.vis.root.setEnabled(false); m.deadAt = this.t;
         this.ui.onToast('Eén vloog naar buiten. Die telt niet meer mee.', 2200);
         core.metrics.event('gone-outside', { id: m.brain.id });
       }
     }
-    // --- audio: listener + voices with occlusion
+    // --- audio: listener + the wings' soft flutter, with occlusion (a caught one beats against the netting)
     this.audio.listener(cf.eye.x, cf.eye.y, cf.eye.z, cf.f.x, cf.f.y, cf.f.z);
-    for (const m of this.mosq) {
+    for (const m of this.smileys) {
       const b = m.brain;
-      if (!b.alive || !b.audible) { this.audio.mosquito(b.id, false, b.x, b.y, b.z, m.freq, 0, 0); continue; }
-      const occ = this.occlusion(cf.eye, b);
-      this.audio.mosquito(b.id, true, b.x, b.y, b.z, m.freq, Math.min(1, Math.hypot(b.vx, b.vy, b.vz) / 1.5), occ);
+      const on = (b.audible && !b.gliding) || b.struggling;
+      if (!on) { this.audio.smiley(b.id, false, b.x, b.y, b.z, b.freq, 0, 0); continue; }
+      const occ = b.state === 'caught' ? 0 : this.occlusion(cf.eye, b);
+      this.audio.smiley(b.id, true, b.x, b.y, b.z, b.freq * (1 + 0.18 * b.effort), b.state === 'caught' ? 1 : b.effort, occ);
     }
     this.audio.setRoomAcoustics(core.room);
     this.audio.setInside(core.room === 'buiten' ? 0 : 1, core.room === 'woon' ? 0 : 0.7);
     // --- reflections follow the player; eye adaptation
     const probe = core.world.probeFor(cf.eye.x, cf.eye.z);
     this.arm.setReflection(probe);
-    if (this.mosq.length) this.mosq[0].vis.setReflection(probe);    // materials are shared
+    if (this.smileys.length) this.smileys[0].vis.setReflection(probe);    // materials are shared
     const dg = core.world.diffuseGainAt(cf.eye.x, cf.eye.z);
     this.arm.setDiffuseGain(dg);
-    if (this.mosq.length) this.mosq[0].vis.setDiffuseGain(dg);
+    if (this.smileys.length) this.smileys[0].vis.setDiffuseGain(dg);
     const view = this.meter(cf);
     const target = this.targetExposure(core.player.x, core.player.z, view.L);
     const ka = 1 - Math.exp(-dt / ADAPTATION.tau);
@@ -482,23 +501,23 @@ export class Session {
       this.audio.footstep(surf, core.player.x, core.player.y + 0.05, core.player.z);
     }
     this.hints();
-    // --- practice: a killed mosquito (or one gone outside) is followed by the next one; round end after silence
+    // --- practice: a caught smiley (or one gone outside) is followed by the next one; round end once all are in the jar
     if (this.practice) {
-      for (const m of [...this.mosq]) if (!m.brain.alive && m.deadAt >= 0 && this.t - m.deadAt > 3) this.respawn(m);
+      for (const m of [...this.smileys]) if ((m.brain.state === 'jarred' || m.brain.state === 'gone') && m.deadAt >= 0 && this.t - m.deadAt > 3) this.respawn(m);
       return;
     }
-    const alive = this.mosq.filter((m) => m.brain.alive).length + this.incomingLeft;
+    const alive = this.smileys.filter((m) => m.brain.state !== 'jarred' && m.brain.state !== 'gone').length + this.incomingLeft;
     if (alive === 0 && this.endTimer < 0) this.endTimer = this.round.silenceEnd ? 3.5 : 1.4;
     if (this.endTimer >= 0) { this.endTimer -= dt; if (this.endTimer < 0) this.finish(); }
   }
 
-  private respawn(m: Mosq) {
-    const i = this.mosq.indexOf(m); m.vis.dispose(); this.mosq.splice(i, 1);
-    this.audio.stopMosquito(m.brain.id);
+  private respawn(m: Smiley) {
+    const i = this.smileys.indexOf(m); m.vis.dispose(); this.smileys.splice(i, 1);
+    this.audio.stopSmiley(m.brain.id);
     this.spawn(this.practiceSpawn(), this.round);
   }
 
-  /** Practice: the next mosquito in a random room of the chalet, not the one the last one came from; flying or already
+  /** Practice: the next smiley in a random room of the chalet, not the one the last one came from; flying or already
    * settling on a surface there. */
   private practiceSpawn(): Spawn {
     const rooms = PRACTICE.rooms.filter((q) => q !== this.lastPracticeRoom);
@@ -507,8 +526,11 @@ export class Session {
     return { room, resting: Math.random() < 0.5 };
   }
 
-  /** Walls and door leaves between listener and mosquito: 0 clear .. 1 behind two or more obstacles. */
-  private occlusion(eye: V3, b: MosquitoBrain): number {
+  /** how many smileys the round has in all (the ones still to come in included) */
+  private total() { return this.practice ? 0 : this.round.smileys.length + (this.round.incoming?.count ?? 0); }
+
+  /** Walls and door leaves between listener and smiley: 0 clear .. 1 behind two or more obstacles. */
+  private occlusion(eye: V3, b: SmileyBrain): number {
     const dx = b.x - eye.x, dy = b.y - eye.y, dz = b.z - eye.z;
     const d = Math.hypot(dx, dy, dz);
     if (d < 0.05) return 0;
@@ -526,73 +548,75 @@ export class Session {
 
   private onContact(c: ContactInfo) {
     const surf: Surface = c.cls >= 0 ? SURFACE_CLASSES[c.cls] ?? 'panel' : '';
-    const m = c.mosquito >= 0 ? this.mosq[c.mosquito] : null;
-    let killed = false;
+    const m = c.smiley >= 0 ? this.smileys[c.smiley] : null;
+    let caught = false;
     if (m && m.brain.alive) {
-      // soft, yielding surfaces (curtain, bedding, cushions, leaves) absorb part of the slap
+      // on soft, yielding surfaces (curtain, bedding, cushions, leaves) the rim does not close on the fabric: it may
+      // creep out under the rim
       const rest = SURFACE_CLASSES[m.brain.surfaceClass] ?? '';
-      if (m.brain.state === 'rest' && SOFT.includes(rest) && Math.random() < 0.45) {
+      if (m.brain.state === 'rest' && SOFT.includes(rest) && Math.random() < 0.3) {
         m.brain.escape({ x: c.point.x, y: c.point.y, z: c.point.z, vx: this.swing.velocity.x, vy: this.swing.velocity.y, vz: this.swing.velocity.z, active: true });
-        this.ui.onToast('De stof geeft mee — ze ontsnapt.');
+        this.ui.onToast('De stof geeft mee — hij kruipt onder de rand door.');
       } else {
-        m.brain.kill(m.brain.state === 'rest');
-        killed = true; m.deadAt = this.t; this.kills++; this.lastProgress = this.t;
-        this.audio.stopMosquito(m.brain.id);
+        m.brain.catch();
+        caught = true; m.caughtAt = this.t; this.caught++; this.lastProgress = this.t;
+        this.ui.onCaught(this.caught, this.total());
       }
     }
-    if (!c.air) this.audio.swat(surf || (m ? SURFACE_CLASSES[m.brain.surfaceClass] ?? 'panel' : 'panel'), c.speed, c.point.x, c.point.y, c.point.z, killed);
-    else if (killed) this.audio.swat('plastic', c.speed * 0.25, c.point.x, c.point.y, c.point.z, true);   // light tick of the mesh on the body in air
-    // a curtain gives way where it is slapped (also when the slap lands on a mosquito sitting on it)
-    if (!c.air && (c.kind === 3 || c.mosquito >= 0)) this.core.world.curtains.hit(c.point, { x: -c.normal.x * c.speed, y: -c.normal.y * c.speed, z: -c.normal.z * c.speed });
-    // impact vibration / air pressure may disturb other resting mosquitoes nearby
-    for (const o of this.mosq) {
+    // the rim's band touching a surface: a soft tap (no slap); a catch: the netting rustles
+    if (!c.air) this.audio.netTap(surf || (m ? SURFACE_CLASSES[m.brain.surfaceClass] ?? 'panel' : 'panel'), c.speed, c.point.x, c.point.y, c.point.z);
+    if (caught) this.audio.netCatch(c.point.x, c.point.y, c.point.z);
+    // a curtain gives way a little where the hoop presses it
+    if (!c.air && (c.kind === 3 || c.smiley >= 0)) this.core.world.curtains.hit(c.point, { x: -c.normal.x * c.speed * 0.35, y: -c.normal.y * c.speed * 0.35, z: -c.normal.z * c.speed * 0.35 });
+    // the knock and the moving net may disturb other resting smileys nearby
+    for (const o of this.smileys) {
       if (o === m || o.brain.state !== 'rest') continue;
       const dd = Math.hypot(o.brain.x - c.point.x, o.brain.y - c.point.y, o.brain.z - c.point.z);
-      if (dd < 0.6 && Math.random() < (0.6 - dd) * 1.6 * this.round.alert) o.brain.takeoff();
+      if (dd < 0.7 && Math.random() < (0.7 - dd) * 1.3 * this.round.alert) o.brain.takeoff();
     }
-    if (killed) this.ui.onToast('Groetjes Mieke', 1800);            // gebruikerswens (24-09-2026): tekst bij elke rake klap
-    this.core.metrics.event('contact', { air: c.air, cls: surf, door: c.door, killed, speed: Math.round(c.speed * 10) / 10 });
+    if (caught) this.ui.onToast('Groetjes Mieke', 1800);            // gebruikerswens (24-09-2026): tekst bij elke vangst
+    this.core.metrics.event('contact', { air: c.air, cls: surf, door: c.door, caught, speed: Math.round(c.speed * 10) / 10 });
   }
 
   private hints() {
-    // (practice too: the mosquito can be in any room of the chalet)
+    // (practice too: the smiley can be in any room of the chalet)
     if (this.helpLevel === 'uit') { this.ui.onHint(''); return; }
     const idle = this.t - this.lastProgress;
     if (idle < (this.helpLevel === 'veel' ? 25 : 45)) { this.ui.onHint(''); return; }
-    const alive = this.mosq.filter((m) => m.brain.alive);
+    const alive = this.smileys.filter((m) => m.brain.alive);
     if (!alive.length) { this.ui.onHint(''); return; }
     const b = alive[0].brain;
-    const room = mosquitoRoom(b);
-    // never reveals a position through walls: only the room, as a listener would guess it
-    this.ui.onHint(room === this.core.room ? (b.audible ? 'Ze vliegt hier in de kamer. Luister.' : 'Ze zit ergens stil in deze kamer.') : `Het gezoem komt uit ${ROOM_NAMES[room] ?? 'een andere kamer'}.`);
+    const room = smileyRoom(b);
+    // never reveals a position through walls: only the room, as one would guess it
+    this.ui.onHint(room === this.core.room ? (b.audible ? 'Hij fladdert hier in de kamer. Kijk omhoog.' : 'Hij zit ergens stil in deze kamer. Kijk ook bij de ramen.') : `Er fladdert er een in ${ROOM_NAMES[room] ?? 'een andere kamer'}.`);
   }
 
   private finish() {
     const r = this.round;
     this.active = false; this.core.running = false; this.core.input.enabled = false;
-    this.audio.stopAllMosquitoes();
+    this.audio.stopAllSmileys();
     const time = Math.round(this.t);
-    this.save.complete(r.id, time, this.swing.swings, this.bites);
+    this.save.complete(r.id, time, this.swing.swings, 0);
     this.save.data.progress.lastRound = Math.min(9, this.roundIndex + 1); this.save.write();
     const mm = Math.floor(time / 60), ss = String(time % 60).padStart(2, '0');
     const next = this.roundIndex < ROUNDS.length - 1 ? this.roundIndex + 1 : null;
     this.ui.onRoundEnd({
-      eyebrow: next === null ? 'CHALET MUGGENVRIJ' : 'RONDE KLAAR',
-      title: next === null ? 'Eindelijk rust.' : r.silenceEnd ? 'Stilte.' : 'Stil.',
-      text: `${r.title}: ${mm}:${ss} · ${this.swing.swings} ${this.swing.swings === 1 ? 'slag' : 'slagen'} · ${this.bites} ${this.bites === 1 ? 'beet' : 'beten'}.`,
+      eyebrow: next === null ? 'ALLE SMILEYS IN DE POT' : 'RONDE KLAAR',
+      title: next === null ? 'Een pot vol smileys.' : r.silenceEnd ? 'Gevangen.' : 'Allemaal binnen.',
+      text: `${r.title}: ${mm}:${ss} · ${this.caught} gevangen · ${this.swing.swings} ${this.swing.swings === 1 ? 'zwaai' : 'zwaaien'} met het net.`,
       next,
     });
-    this.core.metrics.event('round-end', { round: r.id, time, swings: this.swing.swings, bites: this.bites });
+    this.core.metrics.event('round-end', { round: r.id, time, swings: this.swing.swings, caught: this.caught });
   }
 
   diag() {
     const lc = this.swing.lastContact;
     return {
-      round: this.round.id, active: this.active, practice: this.practice, t: Math.round(this.t * 10) / 10, kills: this.kills, bites: this.bites, swings: this.swing.swings,
+      round: this.round.id, active: this.active, practice: this.practice, t: Math.round(this.t * 10) / 10, caught: this.caught, swings: this.swing.swings,
       light: { requested: this.core.world.state, shown: this.core.world.shownState }, exposure: Math.round(this.exposure * 100) / 100,
       whiteBalance: { kelvin: Math.round(1e6 / this.wbMired), tint: Math.round(this.wbTint * 10) / 10 },
-      mosquitoes: this.mosq.map((m) => ({ id: m.brain.id, state: m.brain.state, pos: [m.brain.x, m.brain.y, m.brain.z].map((v) => Math.round(v * 1000) / 1000), room: mosquitoRoom(m.brain) })),
-      lastContact: lc ? { air: lc.air, cls: lc.cls >= 0 ? SURFACE_CLASSES[lc.cls] : null, mosquito: lc.mosquito, door: lc.door, point: [lc.point.x, lc.point.y, lc.point.z].map((v) => Math.round(v * 1000) / 1000) } : null,
+      smileys: this.smileys.map((m) => ({ id: m.brain.id, state: m.brain.state, pos: [m.brain.x, m.brain.y, m.brain.z].map((v) => Math.round(v * 1000) / 1000), room: smileyRoom(m.brain) })),
+      lastContact: lc ? { air: lc.air, cls: lc.cls >= 0 ? SURFACE_CLASSES[lc.cls] : null, smiley: lc.smiley, door: lc.door, point: [lc.point.x, lc.point.y, lc.point.z].map((v) => Math.round(v * 1000) / 1000) } : null,
     };
   }
 }

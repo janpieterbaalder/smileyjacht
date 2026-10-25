@@ -1,7 +1,12 @@
-# Muggenjacht — "Nog één mug"
+# Smileyjacht — "Nog één smiley"
 
-Browsergame (Babylon.js, WebGL 2): jaag in een chalet op muggen, van namiddag tot bedtijd, in tien rondes.
-Bedoeld voor een telefoon in liggende stand; werkt ook op een desktopbrowser met muis en toetsenbord.
+Browsergame (Babylon.js, WebGL 2): vang in een chalet met een vlindernetje de smileys die er rondfladderen, van
+namiddag tot bedtijd, in tien rondes. Smileys zijn ronde, platte gele schijfjes met een gezichtje en vlindervleugels;
+ze vliegen als vlinders. Je vangt ze in de lucht (zwaai het net door ze heen) of als ze even stilzitten (zet het net
+over ze heen). Bedoeld voor een telefoon in liggende stand; werkt ook op een desktopbrowser met muis en toetsenbord.
+
+Kopie van [muggenjacht](https://github.com/janpieterbaalder/muggenjacht) (zelfde chalet, rondes, besturing en arm);
+de muggen en de vliegenmepper zijn vervangen. Het origineel is niet gewijzigd.
 
 ## Structuur
 

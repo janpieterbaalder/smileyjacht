@@ -1,5 +1,6 @@
-// Web Audio engine: spatial mosquito buzz (worklet + HRTF panner + occlusion low-pass), small-room
-// reverb, material-dependent swatter slaps and knocks (impact.ts), whoosh, footsteps, doors, ambience.
+// Web Audio engine: the smileys' spatial wing flutter (worklet + HRTF panner + occlusion low-pass), small-room
+// reverb, the net's soft taps and knocks per material (impact.ts), rustle of the netting, the jar, whoosh, footsteps,
+// doors, ambience.
 // All sounds are synthesised (no recordings). Hearing quality is NOT verified by code: listening
 // test on the target phone is required (CONTROLEPROTOCOL: audio must be heard).
 
@@ -18,7 +19,7 @@ export class AudioEngine {
   enabled = true; volume = 0.9;
   private workletReady = false;
   private voices = new Map<number, Voice>();
-  /** the swatter's slap and a struck object's knock, per material, a few variants each */
+  /** the struck surface's sound (the net's rim tapping it) and a struck object's knock, per material, a few variants each */
   private slaps = new Map<string, AudioBuffer[]>();
   private thumps = new Map<string, AudioBuffer[]>();
   private noise!: AudioBuffer;
@@ -45,7 +46,7 @@ export class AudioEngine {
     const fill = () => { let m = todo.shift(); while (m && this.slaps.has(m)) m = todo.shift(); if (m) { this.slapsFor(m); setTimeout(fill, 20); } };
     setTimeout(fill, 20);
     try {
-      await c.audioWorklet.addModule(import.meta.env.BASE_URL + 'audio/buzz-worklet.js');
+      await c.audioWorklet.addModule(import.meta.env.BASE_URL + 'audio/flutter-worklet.js');
       this.workletReady = true;
     } catch { this.workletReady = false; }
   }
@@ -76,8 +77,8 @@ export class AudioEngine {
     return p;
   }
 
-  /** Create/refresh a mosquito voice. occlusion 0 (clear) .. 1 (behind closed door/walls). */
-  mosquito(id: number, on: boolean, x: number, y: number, z: number, freq: number, effort: number, occlusion: number) {
+  /** Create/refresh a smiley's flutter. rate = wingbeat (Hz); occlusion 0 (clear) .. 1 (behind closed door/walls). */
+  smiley(id: number, on: boolean, x: number, y: number, z: number, rate: number, effort: number, occlusion: number) {
     const c = this.ctx; if (!c) return;
     let v = this.voices.get(id);
     if (!v) {
@@ -88,10 +89,11 @@ export class AudioEngine {
       let src: AudioWorkletNode | OscillatorNode;
       let worklet = false;
       if (this.workletReady) {
-        src = new AudioWorkletNode(c, 'mosquito-buzz', { processorOptions: { seed: id * 7919 + 13 }, outputChannelCount: [1] });
+        src = new AudioWorkletNode(c, 'smiley-flutter', { processorOptions: { seed: id * 7919 + 13 }, outputChannelCount: [1] });
         worklet = true;
       } else {
-        const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = freq; o.start(); src = o;
+        // (no worklet: a quiet low hum at the wingbeat's air band stands in)
+        const o = c.createOscillator(); o.type = 'triangle'; o.frequency.value = 220; o.start(); src = o;
       }
       src.connect(occl).connect(gain).connect(pan).connect(this.sfx);
       gain.connect(send).connect(this.reverbIn);
@@ -104,31 +106,50 @@ export class AudioEngine {
     const amp = on ? 1 : 0;
     if (v.worklet) {
       const w = v.src as AudioWorkletNode;
-      w.parameters.get('freq')!.setValueAtTime(freq, t);
+      w.parameters.get('rate')!.setValueAtTime(rate, t);
       w.parameters.get('amp')!.setValueAtTime(amp, t);
       w.parameters.get('effort')!.setValueAtTime(effort, t);
       v.gain.gain.setTargetAtTime(1 - occlusion * 0.75, t, 0.05);
     } else {
-      (v.src as OscillatorNode).frequency.setTargetAtTime(freq, t, 0.05);
-      v.gain.gain.setTargetAtTime(on ? 0.05 * (1 - occlusion * 0.75) : 0, t, 0.03);
+      v.gain.gain.setTargetAtTime(on ? 0.015 * (1 - occlusion * 0.75) : 0, t, 0.03);
     }
     v.occl.frequency.setTargetAtTime(12000 * Math.pow(0.08, occlusion), t, 0.05);
   }
 
-  stopMosquito(id: number) {
+  stopSmiley(id: number) {
     const v = this.voices.get(id); if (!v) return;
     try { v.gain.gain.setTargetAtTime(0, this.ctx!.currentTime, 0.01); } catch { /* ignore */ }
     setTimeout(() => { try { v.src.disconnect(); v.pan.disconnect(); v.gain.disconnect(); } catch { /* */ } }, 200);
     this.voices.delete(id);
   }
-  stopAllMosquitoes() { for (const id of [...this.voices.keys()]) this.stopMosquito(id); }
+  stopAllSmileys() { for (const id of [...this.voices.keys()]) this.stopSmiley(id); }
 
-  /** Swatter slap at world position; speed m/s; surface class. killed adds a tiny squash. */
-  swat(surface: Surface, speed: number, x: number, y: number, z: number, killed = false) {
+  /** The net's rim coming down on a surface: the band is cloth over wire, so a soft, short tap of the material (a
+   * fraction of a slap) rather than a smack; speed m/s. */
+  netTap(surface: Surface, speed: number, x: number, y: number, z: number) {
     const m = MODES[surface] ? surface : (ALIAS[surface] ?? 'panel');
     this.slapsFor(m);
-    this.play(this.slaps, m, Math.min(1.3, 0.25 + speed / 9) * (m === 'fabric' ? 0.6 : 1), x, y, z);
-    if (killed && this.ctx && this.enabled) this.noiseBurst(x, y, z, 5200, 3, 0.006, 0.05);
+    this.play(this.slaps, m, Math.min(0.45, 0.06 + speed / 30) * (m === 'fabric' ? 0.6 : 1), x, y, z);
+    if (this.ctx && this.enabled) this.noiseBurst(x, y, z, 1800, 1.2, 0.012, 0.02);
+  }
+
+  /** A smiley caught: the netting rustles and snaps taut. */
+  netCatch(x: number, y: number, z: number) {
+    if (!this.ctx || !this.enabled) return;
+    this.noiseBurst(x, y, z, 3800, 0.9, 0.03, 0.05);
+    setTimeout(() => { if (this.ctx && this.enabled) this.noiseBurst(x, y, z, 2600, 1.5, 0.02, 0.035); }, 70);
+  }
+
+  /** Into the jar: a light clink of glass and the lid (heard at the player's hands). */
+  jar() {
+    const c = this.ctx; if (!c || !this.enabled) return;
+    const t = c.currentTime;
+    for (const [f, d, a] of [[2350, 0.0, 0.03], [3170, 0.0, 0.018], [1480, 0.12, 0.025]] as const) {
+      const o = c.createOscillator(); o.type = 'sine'; o.frequency.value = f * (0.98 + Math.random() * 0.04);
+      const g = c.createGain(); g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(a, t + d + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.35);
+      o.connect(g).connect(this.sfx); g.connect(this.reverbIn); o.start(t + d); o.stop(t + d + 0.4);
+    }
+    this.noiseBurst(0, 0, 0, 900, 1, 0.02, 0.02, true);
   }
 
   /** Knock of a struck object (a door falling shut). */
@@ -197,8 +218,6 @@ export class AudioEngine {
     const p = this.panner(); this.setPos(p, x, y, z);
     o.connect(g).connect(p).connect(this.sfx); o.start(t); o.stop(t + 0.45);
   }
-
-  bite() { this.noiseBurst(0, 0, 0, 3000, 2, 0.01, 0.03, true); }
 
   /** Outdoor ambience (wind/leaves) + distant birds; indoor level via 'inside' (0..1). Fridge hum in kitchen. */
   startAmbience(state: string) {
