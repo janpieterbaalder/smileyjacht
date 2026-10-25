@@ -85,7 +85,8 @@ export class AudioEngine {
       const pan = this.panner();
       const occl = c.createBiquadFilter(); occl.type = 'lowpass'; occl.frequency.value = 12000; occl.Q.value = 0.5;
       const gain = c.createGain(); gain.gain.value = 0;
-      const send = c.createGain(); send.gain.value = 0.35;
+      // (a soft sound close by: little room reverb, and it fades with distance sooner than the other sounds)
+      const send = c.createGain(); send.gain.value = 0.12;
       let src: AudioWorkletNode | OscillatorNode;
       let worklet = false;
       if (this.workletReady) {
@@ -95,6 +96,7 @@ export class AudioEngine {
         // (no worklet: a quiet low hum at the wingbeat's air band stands in)
         const o = c.createOscillator(); o.type = 'triangle'; o.frequency.value = 220; o.start(); src = o;
       }
+      pan.refDistance = 0.25; pan.rolloffFactor = 1.4;
       src.connect(occl).connect(gain).connect(pan).connect(this.sfx);
       gain.connect(send).connect(this.reverbIn);
       v = { src, pan, occl, gain, send, worklet };
@@ -111,7 +113,7 @@ export class AudioEngine {
       w.parameters.get('effort')!.setValueAtTime(effort, t);
       v.gain.gain.setTargetAtTime(1 - occlusion * 0.75, t, 0.05);
     } else {
-      v.gain.gain.setTargetAtTime(on ? 0.015 * (1 - occlusion * 0.75) : 0, t, 0.03);
+      v.gain.gain.setTargetAtTime(on ? 0.004 * (1 - occlusion * 0.75) : 0, t, 0.03);
     }
     v.occl.frequency.setTargetAtTime(12000 * Math.pow(0.08, occlusion), t, 0.05);
   }

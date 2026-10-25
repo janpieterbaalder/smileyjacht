@@ -1,7 +1,8 @@
 // The net's bag: a cone of netting hanging from the hoop, simulated as cloth (Verlet particles with distance
 // constraints, no Babylon dependency, unit-tested). The rim ring is sewn to the hoop and follows it exactly; the rest
 // hangs under gravity, trails behind a fast sweep through the air (netting has a lot of drag for its weight), lies
-// against walls and furniture instead of going through them, and is pushed about by a smiley struggling inside.
+// against walls and furniture instead of going through them, and is pushed about by a smiley struggling inside. It
+// never stretches: netting caught behind a door jamb or a wall's edge slides free instead of being held there.
 // Babylon frame (x east, y up, z south), metres, seconds.
 import type { TriBVH, RayHit } from '../physics/bvh';
 
@@ -21,7 +22,7 @@ export const BAG = {
   load: 3,
 };
 
-const hit: RayHit = { t: 0, tri: 0, nx: 0, ny: 0, nz: 0 };
+const hit: RayHit = { t: 0, tri: 0, nx: 0, ny: 0, nz: 0 }, hit2: RayHit = { t: 0, tri: 0, nx: 0, ny: 0, nz: 0 };
 
 /** Radius of ring k (0 = rim) for a hoop of radius R: a rounded bag, narrowing toward the closed bottom. */
 export function ringRadius(k: number, R: number): number {
@@ -35,6 +36,8 @@ export class NetBag {
   /** inverse mass (0 = pinned to the hoop) */
   private w: Float32Array;
   private links: { a: number; b: number; L: number; k: number }[] = [];
+  /** how far (m) each particle can be from the hoop's centre: the rim's radius and its way down the bag (a leash) */
+  private reach: Float32Array;
   readonly count: number;
   /** caught smileys in the bag: where each one sits (filled by step) */
   private loads: { id: number; pos: V3; push: V3 }[] = [];
@@ -61,6 +64,14 @@ export class NetBag {
       if (k + 1 < N) link(p, (k + 1) * A + (i + 1) % A, 0.5);        // shear
       if (k + 2 < N) link(p, (k + 2) * A + i, BAG.bend);              // bend (netting is limp)
     }
+    // the leash: along the bag from the rim to each ring (and the bottom point), 5 % for the netting's give
+    this.reach = new Float32Array(this.count);
+    let path = 0;
+    for (let k = 0; k < N; k++) {
+      if (k > 0) path += Math.hypot(ringRadius(k, R) - ringRadius(k - 1, R), BAG.depth / N);
+      for (let i = 0; i < A; i++) this.reach[k * A + i] = R + path * 1.05;
+    }
+    this.reach[this.count - 1] = R + (path + ringRadius(N - 1, R)) * 1.05;
   }
 
   /** world position of particle i */
@@ -136,7 +147,8 @@ export class NetBag {
         P[p] += vx + ax * hdt * hdt; P[p + 1] += vy + ay * hdt * hdt; P[p + 2] += vz + az * hdt * hdt;
       }
       this.solve();
-      this.collide();
+      this.collide(h);
+      this.leash(h);
     }
     // caught smileys ride in the bottom of the bag (pulled toward it, kept inside the netting)
     const b = this.bottom();
@@ -166,9 +178,22 @@ export class NetBag {
     }
   }
 
+  /** No particle further from the hoop's centre than the bag reaches (the netting does not stretch): pulled back onto
+   * its leash. Whatever held it (a jamb it was caught behind) does not count. */
+  private leash(h: V3) {
+    const P = this.pos;
+    for (let i = BAG.around; i < this.count; i++) {
+      const p = i * 3, dx = P[p] - h.x, dy = P[p + 1] - h.y, dz = P[p + 2] - h.z, d = Math.hypot(dx, dy, dz), m = this.reach[i];
+      if (d <= m) continue;
+      const k = m / d;
+      P[p] = h.x + dx * k; P[p + 1] = h.y + dy * k; P[p + 2] = h.z + dz * k;
+    }
+  }
+
   /** the netting lies against the world instead of passing through it (moves are cut at the first face; a little
-   * friction along it) */
-  private collide() {
+   * friction along it). Netting that is already on the far side of something from the hoop (caught behind a door jamb
+   * when the hoop was pushed past its edge) is not held there: it comes back through, as the hoop pulls it. */
+  private collide(h: V3) {
     const bvh = this.bvh; if (!bvh) return;
     const P = this.pos, Q = this.prev, A = BAG.around;
     for (let i = A; i < this.count; i++) {
@@ -176,6 +201,9 @@ export class NetBag {
       const dx = P[p] - Q[p], dy = P[p + 1] - Q[p + 1], dz = P[p + 2] - Q[p + 2], d = Math.hypot(dx, dy, dz);
       if (d < 1e-7) continue;
       if (bvh.raycast(Q[p], Q[p + 1], Q[p + 2], dx / d, dy / d, dz / d, d + 0.004, hit, 15)) {
+        // (where it was, seen from the hoop's centre: behind a face = caught; let it go)
+        const ex = Q[p] - h.x, ey = Q[p + 1] - h.y, ez = Q[p + 2] - h.z, el = Math.hypot(ex, ey, ez);
+        if (el > 1e-6 && bvh.raycast(h.x, h.y, h.z, ex / el, ey / el, ez / el, el, hit2, 15)) continue;
         const t = Math.max(0, hit.t - 0.004);
         // stop at the face, keep what runs along it (with friction)
         const vn = dx * hit.nx + dy * hit.ny + dz * hit.nz;

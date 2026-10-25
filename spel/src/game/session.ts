@@ -473,7 +473,7 @@ export class Session {
       const on = (b.audible && !b.gliding) || b.struggling;
       if (!on) { this.audio.smiley(b.id, false, b.x, b.y, b.z, b.freq, 0, 0); continue; }
       const occ = b.state === 'caught' ? 0 : this.occlusion(cf.eye, b);
-      this.audio.smiley(b.id, true, b.x, b.y, b.z, b.freq * (1 + 0.18 * b.effort), b.state === 'caught' ? 1 : b.effort, occ);
+      this.audio.smiley(b.id, true, b.x, b.y, b.z, b.freq * (1 + 0.18 * b.effort), b.state === 'caught' ? 0.6 : b.effort, occ);
     }
     this.audio.setRoomAcoustics(core.room);
     this.audio.setInside(core.room === 'buiten' ? 0 : 1, core.room === 'woon' ? 0 : 0.7);

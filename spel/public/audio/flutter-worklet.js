@@ -1,5 +1,6 @@
-// Butterfly wing flutter: a soft, low 'fwup' of moving air on every downstroke (band-passed noise shaped by the stroke)
-// with a faint rustle of the wing edges, at the wingbeat rate (~6-11 Hz). Plausible design values; the result must be
+// Butterfly wing flutter: a very soft, low breath of moving air on every downstroke (band-passed noise shaped by the
+// stroke) with a barely audible rustle of the wing edges, at the wingbeat rate (~6-11 Hz). Kept subtle on purpose: a
+// real butterfly is nearly silent; this is a hint close by, not a buzz. Plausible design values; the result must be
 // judged by listening on the target phone, not from this code.
 class Flutter extends AudioWorkletProcessor {
   static get parameterDescriptors() {
@@ -23,22 +24,23 @@ class Flutter extends AudioWorkletProcessor {
     if (!out) return true;
     const rate = params.rate[0], target = params.amp[0], effort = params.effort[0];
     const sr = sampleRate;
-    // band-pass (RBJ biquad, constant peak gain) round 200-450 Hz for the air push, higher with effort
-    const f = 200 + 250 * effort, w = 2 * Math.PI * f / sr, q = 1.2, al = Math.sin(w) / (2 * q), cw = Math.cos(w), a0 = 1 + al;
+    // band-pass (RBJ biquad, constant peak gain) round 140-260 Hz for the air push, a little higher with effort; broad
+    // (low Q) so it reads as a soft breath, not a tone
+    const f = 140 + 120 * effort, w = 2 * Math.PI * f / sr, q = 0.7, al = Math.sin(w) / (2 * q), cw = Math.cos(w), a0 = 1 + al;
     const b0 = al / a0, b2 = -al / a0, a1 = -2 * cw / a0, a2 = (1 - al) / a0;
     for (let i = 0; i < out.length; i++) {
       this.env += (target - this.env) * 0.0015;
       this.phase += rate * (1 + this.jit * 0.08) / sr;
-      if (this.phase >= 1) { this.phase -= 1; this.jit = this.rand() - 0.5; this.beatAmp = 0.75 + 0.5 * this.rand(); }
+      if (this.phase >= 1) { this.phase -= 1; this.jit = this.rand() - 0.5; this.beatAmp = 0.85 + 0.3 * this.rand(); }
       const p = this.phase;
-      // downstroke = first half of the beat: sin^2 swell; the upstroke a quiet tail
-      const stroke = p < 0.5 ? Math.sin(Math.PI * p * 2) ** 2 : 0.12 * Math.sin(Math.PI * (p - 0.5) * 2) ** 2;
+      // downstroke = first half of the beat: a smooth swell; the upstroke almost silent
+      const stroke = p < 0.5 ? Math.sin(Math.PI * p * 2) ** 2 : 0.05 * Math.sin(Math.PI * (p - 0.5) * 2) ** 2;
       const n = this.rand() * 2 - 1;
       const y = b0 * n + b2 * this.x2 - a1 * this.y1 - a2 * this.y2;
       this.x2 = this.x1; this.x1 = n; this.y2 = this.y1; this.y1 = y;
       // faint rustle of the wing edges (high-passed noise)
       this.hp = 0.92 * (this.hp + n - this.hpPrev); this.hpPrev = n;
-      out[i] = (y * 1.6 + this.hp * 0.04 * (0.4 + effort)) * stroke * this.beatAmp * this.env * 0.5;
+      out[i] = (y * 1.6 + this.hp * 0.01 * (0.4 + effort)) * stroke * this.beatAmp * this.env * 0.12;
     }
     return true;
   }

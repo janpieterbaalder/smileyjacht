@@ -56,3 +56,43 @@ test('a caught smiley sits in the bottom of the bag and its beating moves the ne
   assert.equal(bag.loadPos(7), null);
   void before;
 });
+
+test('walking out through a doorway the bag catches on the jamb but never stretches: it comes free', () => {
+  // a wall at x 1.0-1.1 with a doorway between z 0.5 and 1.4; the net is carried through it close to the jamb at
+  // z 0.5 and then away to the side behind the wall, so the trailing bag drags round the jamb's edge
+  const bvh = boxesToBVH([{ min: [1.0, 0, -3], max: [1.1, 2.4, 0.5] }, { min: [1.0, 0, 1.4], max: [1.1, 2.4, 4] }]);
+  const bag = new NetBag(R, bvh);
+  const h = { x: 0.4, y: 1.3, z: 0.65 };
+  const maxReach = R + BAG.depth * 1.12;
+  let worst = 0;
+  const run = (steps: number, move: (i: number) => void) => {
+    for (let i = 0; i < steps; i++) {
+      move(i);
+      bag.step(1 / 60, h, fwd, right, up);
+      for (let k = 0; k < bag.count; k++) { const p = bag.at(k); worst = Math.max(worst, Math.hypot(p.x - h.x, p.y - h.y, p.z - h.z)); }
+    }
+  };
+  run(60, () => {});                                        // hanging still before the doorway
+  run(60, () => { h.x += 1.6 / 60; });                     // through it (1.6 m/s)
+  run(60, () => { h.z -= 1.5 / 60; });                     // and away along the wall's far side
+  run(120, () => {});                                       // standing still
+  assert.ok(worst <= maxReach + 1e-6, `bag stretched to ${worst.toFixed(2)} m from the hoop (max ${maxReach.toFixed(2)})`);
+  for (let k = 0; k < bag.count; k++) assert.ok(bag.at(k).x > 1.1, `particle ${k} still behind the wall at x ${bag.at(k).x.toFixed(2)}`);
+});
+
+test('a hoop that jumps past a wall edge in a frame or two does not leave the bag stretched behind it', () => {
+  // the shown net can be pushed several cm per frame (out of a jamb, turning fast in a doorway): the netting's straight
+  // way from where it was to where the hoop pulls it then runs through the wall
+  const bvh = boxesToBVH([{ min: [1.0, 0, -3], max: [1.1, 2.4, 0.5] }]);
+  const bag = new NetBag(R, bvh);
+  const h = { x: 0.6, y: 1.3, z: 0.2 };
+  const maxReach = R + BAG.depth * 1.12;
+  let worst = 0;
+  const step = () => { bag.step(1 / 60, h, fwd, right, up); for (let k = 0; k < bag.count; k++) { const p = bag.at(k); worst = Math.max(worst, Math.hypot(p.x - h.x, p.y - h.y, p.z - h.z)); } };
+  for (let i = 0; i < 60; i++) step();
+  // round the wall's end in three frames: out past its edge, then behind it
+  h.z = 0.75; step(); h.x = 1.4; step(); h.z = 0.2; step();
+  for (let i = 0; i < 120; i++) step();
+  assert.ok(worst <= maxReach + 1e-6, `bag stretched to ${worst.toFixed(2)} m from the hoop (max ${maxReach.toFixed(2)})`);
+  for (let k = 0; k < bag.count; k++) assert.ok(bag.at(k).x > 1.1, `particle ${k} left behind the wall at x ${bag.at(k).x.toFixed(2)}`);
+});
