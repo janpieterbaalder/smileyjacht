@@ -574,7 +574,7 @@ export class Session {
       const dd = Math.hypot(o.brain.x - c.point.x, o.brain.y - c.point.y, o.brain.z - c.point.z);
       if (dd < 0.7 && Math.random() < (0.7 - dd) * 1.3 * this.round.alert) o.brain.takeoff();
     }
-    if (caught) this.ui.onToast('Groetjes Mieke', 1800);            // gebruikerswens (24-09-2026): tekst bij elke vangst
+    if (caught) this.ui.onToast('Iedereen blij op de Vechtvallei', 1800);   // gebruikerswens (25-10-2026): tekst bij elke vangst
     this.core.metrics.event('contact', { air: c.air, cls: surf, door: c.door, caught, speed: Math.round(c.speed * 10) / 10 });
   }
 
