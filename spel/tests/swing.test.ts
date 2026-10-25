@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { boxesToBVH, prismToBVH } from './helpers';
-import { SwingSystem, restPose, type CamFrame, type MosquitoTarget, type ContactInfo } from '../src/swatter/swing';
+import { SwingSystem, restPose, type CamFrame, type SmileyTarget, type ContactInfo } from '../src/net/swing';
 import { parseCollision } from '../src/physics/bvh';
-import { ARM_PLAN_MAX, WRIST, armPole, bodyFrame, handOnHandle, lookTiptoe, shoulderAt, solveArm, wristAngles } from '../src/swatter/armgeom';
+import { ARM_PLAN_MAX, WRIST, armPole, bodyFrame, handOnHandle, lookTiptoe, shoulderAt, solveArm, wristAngles } from '../src/net/armgeom';
 
 const cam: CamFrame = { eye: { x: 2, y: 1.6, z: 2 }, f: { x: 1, y: 0, z: 0 }, r: { x: 0, y: 0, z: 1 }, up: { x: 0, y: 1, z: 0 } };
 const noDoors = (_o: unknown, _d: unknown, max: number) => max;
 
-function run(sys: SwingSystem, mosq: MosquitoTarget[] = [], secs = 1): { c: ContactInfo | null; maxX: number } {
+function run(sys: SwingSystem, mosq: SmileyTarget[] = [], secs = 1): { c: ContactInfo | null; maxX: number } {
   let c: ContactInfo | null = null, maxX = -Infinity;
   for (let i = 0; i < secs * 60; i++) {
     const got = sys.update(1 / 60, restPose(cam, 1, i / 60, { x: 0, y: 0, z: 0 }), mosq);
@@ -51,21 +51,21 @@ test('air swing ends as an air contact at reach', () => {
   const sys = new SwingSystem(boxesToBVH([{ min: [9, 0, 0], max: [9.1, 2, 4] }]), noDoors);
   sys.begin(cam, { x: 1, y: 0, z: 0 }, 1, 0, []);
   const { c } = run(sys);
-  assert.ok(c && c.air && c.mosquito === -1);
+  assert.ok(c && c.air && c.smiley === -1);
 });
 
-test('flying mosquito on the aim line is hit in the air; resting one on the wall is squashed', () => {
-  const fly: MosquitoTarget[] = [{ idx: 0, pos: { x: 2.6, y: 1.5, z: 2.05 }, prev: { x: 2.6, y: 1.5, z: 2.05 }, alive: true, resting: false, nrm: { x: 0, y: 1, z: 0 } }];
+test('flying smiley on the aim line is hit in the air; resting one on the wall is squashed', () => {
+  const fly: SmileyTarget[] = [{ idx: 0, pos: { x: 2.6, y: 1.5, z: 2.05 }, prev: { x: 2.6, y: 1.5, z: 2.05 }, alive: true, resting: false, nrm: { x: 0, y: 1, z: 0 } }];
   const a = new SwingSystem(boxesToBVH([{ min: [9, 0, 0], max: [9.1, 2, 4] }]), noDoors);
   const da = { x: 0.6, y: -0.1, z: 0.05 }, la = Math.hypot(da.x, da.y, da.z);
   a.begin(cam, { x: da.x / la, y: da.y / la, z: da.z / la }, 1, 0, fly);
   const ra = run(a, fly);
-  assert.ok(ra.c && ra.c.mosquito === 0 && ra.c.air, 'air hit');
-  const rest: MosquitoTarget[] = [{ idx: 0, pos: { x: 2.597, y: 1.6, z: 2.02 }, prev: { x: 2.597, y: 1.6, z: 2.02 }, alive: true, resting: true, nrm: { x: -1, y: 0, z: 0 } }];
+  assert.ok(ra.c && ra.c.smiley === 0 && ra.c.air, 'air hit');
+  const rest: SmileyTarget[] = [{ idx: 0, pos: { x: 2.597, y: 1.6, z: 2.02 }, prev: { x: 2.597, y: 1.6, z: 2.02 }, alive: true, resting: true, nrm: { x: -1, y: 0, z: 0 } }];
   const b = new SwingSystem(boxesToBVH([{ min: [2.6, 0, 0], max: [2.7, 2.4, 4] }]), noDoors);
   b.begin(cam, { x: 1, y: 0, z: 0 }, 1, 0, rest);
   const rb = run(b, rest);
-  assert.ok(rb.c && rb.c.mosquito === 0 && !rb.c.air, 'squashed against the wall');
+  assert.ok(rb.c && rb.c.smiley === 0 && !rb.c.air, 'squashed against the wall');
 });
 
 test('door leaf blocks the swing like a wall', () => {
@@ -249,7 +249,7 @@ test('a door leaf swinging into the resting swatter pushes it out at once', () =
   }
 });
 
-test('a mosquito on the 2.31 m ceiling is reachable looking up from nearby (on the toes), not from afar', () => {
+test('a smiley on the 2.31 m ceiling is reachable looking up from nearby (on the toes), not from afar', () => {
   // it stayed ~9 cm out of reach even looking straight up: no rise onto the toes in the view, no shoulder lift
   const ceiling = () => boxesToBVH([{ min: [-0.1, -0.1, -0.1], max: [6.1, 0, 6.1], kind: 1, cls: 1 }, { min: [-0.1, 2.31, -0.1], max: [6.1, 2.41, 6.1] }]);
   const swingAt = (pitchDeg: number, hand: number) => {
@@ -270,7 +270,7 @@ test('a mosquito on the 2.31 m ceiling is reachable looking up from nearby (on t
   assert.ok(far && far.air, 'far ceiling point: air swing');
 });
 
-test('flying mosquitoes stay in reach at 1.0-1.15 m (the wire may bend in a fast air swing)', () => {
+test('flying smileys stay in reach at 1.0-1.15 m (the wire may bend in a fast air swing)', () => {
   // capping the handle bend for air swings (the wire "has nothing to bend it") cut hits at 1.0 m by half
   const floorOnly = () => boxesToBVH([{ min: [-0.1, -0.1, -0.1], max: [6.1, 0, 6.1], kind: 1, cls: 1 }]);
   const hits = (D: number) => {
@@ -282,10 +282,10 @@ test('flying mosquitoes stay in reach at 1.0-1.15 m (the wire may bend in a fast
       const c: CamFrame = { eye: { x: 3, y: 1.62, z: 3 }, f, r, up };
       const d0 = { x: f.x + up.x * e * 0.1, y: f.y + up.y * e * 0.1, z: f.z + up.z * e * 0.1 }, l = Math.hypot(d0.x, d0.y, d0.z), d = { x: d0.x / l, y: d0.y / l, z: d0.z / l };
       const pos = { x: 3 + d.x * D, y: 1.62 + d.y * D, z: 3 + d.z * D };
-      const m: MosquitoTarget[] = [{ idx: 0, pos, prev: pos, alive: true, resting: false, nrm: { x: 0, y: 1, z: 0 } }];
+      const m: SmileyTarget[] = [{ idx: 0, pos, prev: pos, alive: true, resting: false, nrm: { x: 0, y: 1, z: 0 } }];
       const sys = new SwingSystem(floorOnly(), noDoors);
       if (!sys.begin(c, d, hand, 0, m, 0.32)) continue;
-      for (let i = 0; i < 60; i++) { const g = sys.update(1 / 60, restPose(c, hand, i / 60, { x: 0, y: 0, z: 0 }), m); if (g && g.mosquito === 0) { n++; break; } }
+      for (let i = 0; i < 60; i++) { const g = sys.update(1 / 60, restPose(c, hand, i / 60, { x: 0, y: 0, z: 0 }), m); if (g && g.smiley === 0) { n++; break; } }
     }
     return n;
   };
@@ -293,11 +293,11 @@ test('flying mosquitoes stay in reach at 1.0-1.15 m (the wire may bend in a fast
   assert.ok(hits(1.0) >= 130, `1.0 m: ${hits(1.0)} of 250`);
   assert.ok(hits(1.15) >= 60, `1.15 m: ${hits(1.15)} of 250`);
 });
-// ---- the swatter lands where it strikes (user feedback 28-09-2026: at the toilet's back wall the mosquito died, but the
+// ---- the swatter lands where it strikes (user feedback 28-09-2026: at the toilet's back wall the smiley died, but the
 // swatter came down beside it - the arm was in the way; one should turn the arm and swatter before striking)
 
 /** A swat as Session makes it: aimed through the eye at `at` (a point on a surface), the body leaning in or stepping
- * back as the plan asks (eased in as Session does), the shown swatter resolved against the room every frame. A mosquito
+ * back as the plan asks (eased in as Session does), the shown swatter resolved against the room every frame. A smiley
  * rests on the surface there. Returns the contact, the plan, the shown head at contact and the swing's stop pose. */
 function strike(bvh: ReturnType<typeof boxesToBVH>, eye: { x: number; y: number; z: number }, at: { x: number; y: number; z: number }, nrm: { x: number; y: number; z: number },
   hand: number, room = { leanMax: 0.32, leanBack: 0 }, soft = false) {
@@ -309,7 +309,7 @@ function strike(bvh: ReturnType<typeof boxesToBVH>, eye: { x: number; y: number;
     return { ...c, eye: { x: eye.x + fx * lean, y: eye.y - 0.35 * Math.max(0, lean), z: eye.z + fz * lean } };
   };
   const m = { x: at.x + nrm.x * 0.003, y: at.y + nrm.y * 0.003, z: at.z + nrm.z * 0.003 };
-  const mosq: MosquitoTarget[] = [{ idx: 0, pos: m, prev: m, alive: true, resting: true, nrm, soft }];
+  const mosq: SmileyTarget[] = [{ idx: 0, pos: m, prev: m, alive: true, resting: true, nrm, soft }];
   const sys = new SwingSystem(bvh, noDoors);
   for (let i = 0; i < 30; i++) sys.update(1 / 60, sys.restFor(frame(0), hand, i / 60), [], frame(0), hand);
   assert.ok(sys.begin(frame(0), { x: d0.x / l, y: d0.y / l, z: d0.z / l }, hand, 0.5, mosq, room.leanMax, room.leanBack), 'swing starts');
@@ -323,7 +323,7 @@ function strike(bvh: ReturnType<typeof boxesToBVH>, eye: { x: number; y: number;
     c = sys.update(1 / 60, sys.restFor(cf, hand, 0.5 + i / 60), mosq, cf, hand);
     if (c) { shown = sys.pose; stop = sys.swing!.target; }
   }
-  // offset of the shown head from the mosquito along the surface, and how far the stop pose is off the surface
+  // offset of the shown head from the smiley along the surface, and how far the stop pose is off the surface
   const off = (p: { h: { x: number; y: number; z: number } }) => {
     const r = { x: p.h.x - m.x, y: p.h.y - m.y, z: p.h.z - m.z }, dn = r.x * nrm.x + r.y * nrm.y + r.z * nrm.z;
     return Math.hypot(r.x - nrm.x * dn, r.y - nrm.y * dn, r.z - nrm.z * dn);
@@ -337,14 +337,14 @@ function chalet() {
   return parseCollision(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
 }
 
-test('toilet back wall (chalet): the swatter is turned to fit and lands on the mosquito it kills', () => {
+test('toilet back wall (chalet): the swatter is turned to fit and lands on the smiley it kills', () => {
   // standing in the toilet (0.72 m wide) facing the back wall 0.87 m ahead. With the most comfortable pose the handle lay
   // level toward the right hand and the grip ended 4 cm inside the side wall: pushed out as a whole, the head came down
-  // 49 mm beside the killed mosquito (right hand, middle of the wall at 1.2 m)
+  // 49 mm beside the killed smiley (right hand, middle of the wall at 1.2 m)
   const bvh = chalet(), eye = { x: 2.79, y: 1.62, z: -0.95 }, wall = { x: 0, y: 0, z: -1 };
   for (const [x, y, hand] of [[2.79, 1.2, 1], [2.79, 1.2, -1], [2.62, 1.2, 1], [2.95, 1.2, -1], [2.79, 0.95, 1], [2.95, 1.5, 1]]) {
     const r = strike(bvh, eye, { x, y, z: -0.08 }, wall, hand);
-    assert.ok(r.c && r.c.mosquito === 0, `(${x}, ${y}) hand ${hand}: the mosquito is hit`);
+    assert.ok(r.c && r.c.smiley === 0, `(${x}, ${y}) hand ${hand}: the smiley is hit`);
     assert.ok(r.sideways < 0.012, `(${x}, ${y}) hand ${hand}: the head lands ${(r.sideways * 1000).toFixed(0)} mm beside it`);
     assert.ok(r.gap < 0.006, `(${x}, ${y}) hand ${hand}: the head stops ${(r.gap * 1000).toFixed(0)} mm short of the wall`);
   }
@@ -359,11 +359,11 @@ test('in a narrow passage the swatter is turned so that hand and handle stay cle
   const { fwd, right } = bodyFrame(cam.f, cam.r);
   for (const [z, y, hand] of [[2.0, 1.2, 1], [2.0, 1.2, -1], [1.85, 1.5, 1], [2.15, 1.5, -1], [2.0, 0.95, 1]]) {
     const r = strike(bvh, { x: 2, y: 1.62, z: 2 }, { x: 2.87, y, z }, { x: -1, y: 0, z: 0 }, hand);
-    assert.ok(r.c && r.c.mosquito === 0, `(${z}, ${y}) hand ${hand}: hit`);
+    assert.ok(r.c && r.c.smiley === 0, `(${z}, ${y}) hand ${hand}: hit`);
     const S = shoulderAt({ x: 2 + r.plan.lean, y: 1.62 - 0.35 * Math.max(0, r.plan.lean), z: 2 }, fwd, right, hand);
     const inWall = r.sys.penetration(r.stop, S, undefined, hand).depth;
     assert.ok(inWall <= 0.003, `(${z}, ${y}) hand ${hand}: at contact ${(inWall * 1000).toFixed(0)} mm inside a wall`);
-    assert.ok(r.sideways < 0.012, `(${z}, ${y}) hand ${hand}: the head lands ${(r.sideways * 1000).toFixed(0)} mm beside the mosquito`);
+    assert.ok(r.sideways < 0.012, `(${z}, ${y}) hand ${hand}: the head lands ${(r.sideways * 1000).toFixed(0)} mm beside the smiley`);
   }
 });
 
@@ -373,58 +373,58 @@ test('a short strike lands flat on the aimed point, not on its curve and tilted'
   const bvh = boxesToBVH([{ min: [2.45, 0, 0], max: [2.55, 2.4, 4] }]);
   for (const [y, z] of [[1.62, 2.0], [1.9, 2.25], [1.3, 1.8]]) {
     const r = strike(bvh, { x: 2, y: 1.62, z: 2 }, { x: 2.45, y, z }, { x: -1, y: 0, z: 0 }, 1, { leanMax: 0, leanBack: 0 });
-    assert.ok(r.c && r.c.mosquito === 0, `(${y}, ${z}): hit`);
+    assert.ok(r.c && r.c.smiley === 0, `(${y}, ${z}): hit`);
     assert.ok(r.sideways < 0.006, `(${y}, ${z}): the head lands ${(r.sideways * 1000).toFixed(1)} mm beside the aimed point`);
     assert.ok(r.stop.n.x > Math.cos(2 * Math.PI / 180), `(${y}, ${z}): face tilted ${(Math.acos(r.stop.n.x) * 180 / Math.PI).toFixed(1)} deg against the wall`);
   }
 });
 
-test('a resting mosquito is squashed against its wall: the head goes on to the wall', () => {
-  // the hit is registered 11 mm before the face reaches the mosquito (legs and a fair margin); the swing stopped there,
+test('a resting smiley is squashed against its wall: the head goes on to the wall', () => {
+  // the hit is registered 11 mm before the face reaches the smiley (legs and a fair margin); the swing stopped there,
   // the head 1.4 cm short of the wall
   const bvh = boxesToBVH([{ min: [2.6, 0, 0], max: [2.7, 2.4, 4] }]);
   const r = strike(bvh, { x: 2, y: 1.62, z: 2 }, { x: 2.6, y: 1.5, z: 2.02 }, { x: -1, y: 0, z: 0 }, 1);
-  assert.ok(r.c && r.c.mosquito === 0 && !r.c.air, 'squashed');
+  assert.ok(r.c && r.c.smiley === 0 && !r.c.air, 'squashed');
   assert.ok(r.gap < 0.006, `the head stops ${(r.gap * 1000).toFixed(1)} mm in front of the wall`);
 });
 
-test('a mosquito right in front of the face: the body steps back, the head lands on it, the hand stays out of the wall', () => {
+test('a smiley right in front of the face: the body steps back, the head lands on it, the hand stays out of the wall', () => {
   // 0.37 m in front of the eye the 46 cm swatter only fitted with the handle bent into the wall: the hand was pushed out
-  // and the head held 5 cm in front of the mosquito it killed
+  // and the head held 5 cm in front of the smiley it killed
   const floor = { min: [-3.1, -0.1, -3.1], max: [9.1, 0, 9.1], kind: 1, cls: 1 } as const;
   const bvh = boxesToBVH([{ ...floor, min: [...floor.min], max: [...floor.max] }, { min: [2.37, 0, 0], max: [2.47, 2.4, 4] }]);
   for (const hand of [1, -1]) {
     const r = strike(bvh, { x: 2, y: 1.62, z: 2 }, { x: 2.37, y: 1.65, z: 2.0 }, { x: -1, y: 0, z: 0 }, hand, { leanMax: 0.07, leanBack: 0.25 });
     assert.ok(r.plan.lean < -0.05, `hand ${hand}: steps back (${r.plan.lean.toFixed(2)} m)`);
-    assert.ok(r.c && r.c.mosquito === 0, `hand ${hand}: hit`);
+    assert.ok(r.c && r.c.smiley === 0, `hand ${hand}: hit`);
     assert.ok(r.sideways < 0.012 && r.gap < 0.006, `hand ${hand}: the head lands ${(r.sideways * 1000).toFixed(0)} mm beside it, ${(r.gap * 1000).toFixed(0)} mm in front of the wall`);
   }
 });
 
-// ---- reach (user feedback 06-10-2026: "you cannot always get everywhere a mosquito sits")
+// ---- reach (user feedback 06-10-2026: "you cannot always get everywhere a smiley sits")
 
 const FLOOR = { min: [-3.1, -0.1, -3.1] as [number, number, number], max: [9.1, 0, 9.1] as [number, number, number], kind: 1, cls: 1 };
 
-test('a mosquito in a corner: the head is laid with its edge against the side wall and lands on it', () => {
-  // centred on a mosquito 1.5-3 cm from the corner the head's rim met the side wall first: the swing stopped there
-  // (chalet scan: about one landing spot in thirty, mostly where the ceiling meets a wall)
+test('a smiley in a corner: the head is laid with its edge against the side wall and lands on it', () => {
+  // centred on a smiley 4-5.5 cm from the corner (closer its 60 mm disc does not land) the hoop's rim met the side wall
+  // first: the swing stopped there
   const bvh = boxesToBVH([FLOOR, { min: [3.0, 0, -1], max: [3.1, 2.4, 4] }, { min: [-1, 0, 3.0], max: [4, 2.4, 3.1] }, { min: [-1, 0, 0.9], max: [4, 2.4, 1.0] }]);
   const sys = new SwingSystem(bvh, noDoors), wall = { x: -1, y: 0, z: 0 };
-  for (const [z, ez, hand] of [[2.985, 2.4, 1], [2.975, 2.4, -1], [1.015, 1.6, 1], [1.03, 1.6, -1]]) {
+  for (const [z, ez, hand] of [[2.96, 2.4, 1], [2.95, 2.4, -1], [1.04, 1.6, 1], [1.055, 1.6, -1]]) {
     const at = { x: 3.0, y: 1.45, z }, shift = sys.headRoom(at, wall);
     assert.ok(Math.hypot(shift.x, shift.y, shift.z) > 0.03, `test setup: the head does not fit centred (${z})`);
     const r = strike(bvh, { x: 2.3, y: 1.62, z: ez }, at, wall, hand);
-    assert.ok(r.c && r.c.mosquito === 0 && !r.c.air, `${(Math.min(Math.abs(z - 3), Math.abs(z - 1)) * 100).toFixed(1)} cm from the corner, hand ${hand}: hit`);
+    assert.ok(r.c && r.c.smiley === 0 && !r.c.air, `${(Math.min(Math.abs(z - 3), Math.abs(z - 1)) * 100).toFixed(1)} cm from the corner, hand ${hand}: hit`);
   }
   // in the middle of the wall the head is not moved
   assert.deepEqual(sys.headRoom({ x: 3.0, y: 1.45, z: 2.0 }, wall), { x: 0, y: 0, z: 0 });
 });
 
-test('a mosquito on the ceiling right by the wall is reachable from below', () => {
+test('a smiley on the ceiling right by the wall is reachable from below', () => {
   const bvh = boxesToBVH([FLOOR, { min: [-1, 2.31, -1], max: [5, 2.41, 5] }, { min: [-1, 0, 3.0], max: [5, 2.41, 3.1] }]);
-  for (const [dz, hand] of [[0.02, 1], [0.04, 1], [0.03, -1]]) {
+  for (const [dz, hand] of [[0.04, 1], [0.055, 1], [0.045, -1]]) {
     const r = strike(bvh, { x: 2.0, y: 1.70, z: 2.85 }, { x: 2.0, y: 2.31, z: 3.0 - dz }, { x: 0, y: -1, z: 0 }, hand);
-    assert.ok(r.c && r.c.mosquito === 0 && !r.c.air, `${dz * 100} cm from the wall, hand ${hand}: hit`);
+    assert.ok(r.c && r.c.smiley === 0 && !r.c.air, `${dz * 100} cm from the wall, hand ${hand}: hit`);
   }
 });
 
@@ -433,23 +433,55 @@ test('in a gap narrower than the head it is not moved to and fro', () => {
   assert.deepEqual(new SwingSystem(bvh, noDoors).headRoom({ x: 3.0, y: 1.4, z: 1.995 }, { x: -1, y: 0, z: 0 }), { x: 0, y: 0, z: 0 });
 });
 
-test('a mosquito in a curtain fold: the fabric gives under the slap and it is hit; between hard ridges it is not', () => {
+test('a smiley in a curtain fold: the fabric gives under the slap and it is hit; between hard ridges it is not', () => {
   // the folds stand 10 cm out from the back of the curtain; the head meets their fronts first
   const folds = (kind: number) => boxesToBVH([FLOOR, { min: [2.72, 0, -1], max: [2.82, 2.4, 4] }, { min: [2.70, 0.6, 1.6], max: [2.72, 2.2, 2.4], kind, cls: 6 },
     { min: [2.60, 0.6, 1.90], max: [2.70, 2.2, 1.95], kind, cls: 6 }, { min: [2.60, 0.6, 2.05], max: [2.70, 2.2, 2.10], kind, cls: 6 }]);
   const r = strike(folds(3), { x: 2.0, y: 1.62, z: 2.0 }, { x: 2.70, y: 1.45, z: 2.0 }, { x: -1, y: 0, z: 0 }, 1, undefined, true);
-  assert.ok(r.c && r.c.mosquito === 0 && r.c.kind === 3, 'curtain: hit through the fold');
+  assert.ok(r.c && r.c.smiley === 0 && r.c.kind === 3, 'curtain: hit through the fold');
   const hard = strike(folds(0), { x: 2.0, y: 1.62, z: 2.0 }, { x: 2.70, y: 1.45, z: 2.0 }, { x: -1, y: 0, z: 0 }, 1);
-  assert.ok(hard.c && hard.c.mosquito === -1, 'hard ridges: the head stops on them');
+  assert.ok(hard.c && hard.c.smiley === -1, 'hard ridges: the head stops on them');
 });
 
-test('bent down low you see and reach a mosquito under a table; standing you do not see it', () => {
-  // the posture control (Core.stance): the eye ~0.75 m above the floor, a mosquito on the wall under a 0.74 m table
+test('bent down low you see and reach a smiley under a table; standing you do not see it', () => {
+  // the posture control (Core.stance): the eye ~0.75 m above the floor, a smiley on the wall under a 0.74 m table
   const bvh = boxesToBVH([FLOOR, { min: [2.9, 0, -1], max: [3.0, 2.4, 4] }, { min: [2.2, 0.70, 1.5], max: [2.9, 0.74, 2.5] }]);
   const at = { x: 2.9, y: 0.45, z: 2.0 }, hit = { t: 0, tri: 0, nx: 0, ny: 0, nz: 0 };
   const sees = (eyeY: number) => { const dx = at.x - 1.95, dy = at.y - eyeY, l = Math.hypot(dx, dy); return !bvh.raycast(1.95, eyeY, 2.0, dx / l, dy / l, 0, l - 0.02, hit, 15); };
   assert.ok(!sees(1.62) && !sees(1.62 - 0.35), 'standing, or looking steeply down, the table top hides it');
   assert.ok(sees(0.75), 'bent down it is in sight');
   const r = strike(bvh, { x: 1.95, y: 0.75, z: 2.0 }, at, { x: -1, y: 0, z: 0 }, 1);
-  assert.ok(r.c && r.c.mosquito === 0 && !r.c.air, 'and hit');
+  assert.ok(r.c && r.c.smiley === 0 && !r.c.air, 'and hit');
+});
+
+// ---- the net (smileyjacht)
+
+test('net over a resting smiley: caught when the rim comes down around it, not when it sits outside the rim', () => {
+  const bvh = boxesToBVH([FLOOR, { min: [2.9, 0, -1], max: [3.0, 2.4, 4] }]);
+  const wall = { x: -1, y: 0, z: 0 };
+  const r = strike(bvh, { x: 2.2, y: 1.62, z: 2.0 }, { x: 2.9, y: 1.45, z: 2.0 }, wall, 1);
+  assert.ok(r.c && r.c.smiley === 0 && !r.c.air, 'caught under the hoop');
+  // the same swing with the smiley 15 cm to the side: the rim (radius 10 cm) comes down beside it
+  const at = { x: 2.9, y: 1.45, z: 2.0 }, m = { x: 2.903, y: 1.45, z: 2.15 };
+  const sys = new SwingSystem(bvh, noDoors);
+  const c: CamFrame = { eye: { x: 2.2, y: 1.62, z: 2.0 }, ...view(Math.atan2(0, 0.7) * 180 / Math.PI, Math.atan2(at.y - 1.62, 0.7) * 180 / Math.PI) };
+  const d0 = { x: at.x - 2.2, y: at.y - 1.62, z: 0 }, l = Math.hypot(d0.x, d0.y);
+  assert.ok(sys.begin(c, { x: d0.x / l, y: d0.y / l, z: 0 }, 1, 0, [], 0.32));
+  let got: ContactInfo | null = null;
+  const tg: SmileyTarget[] = [{ idx: 0, pos: m, prev: m, alive: true, resting: true, nrm: { x: -1, y: 0, z: 0 } }];
+  for (let i = 0; i < 60 && !got; i++) got = sys.update(1 / 60, restPose(c, 1, i / 60, { x: 0, y: 0, z: 0 }), tg);
+  assert.ok(got && !got.air && got.smiley === -1, 'not caught outside the rim');
+});
+
+test('the hoop is held on the surface a moment after it comes down (the smiley flutters up into the bag)', () => {
+  const sys = new SwingSystem(boxesToBVH([{ min: [2.6, 0, 0], max: [2.7, 2.4, 4] }]), noDoors);
+  assert.ok(sys.begin(cam, { x: 1, y: 0, z: 0 }, 1, 0, []));
+  let tc = -1, held = 0;
+  for (let i = 0; i < 120; i++) {
+    const c = sys.update(1 / 120, restPose(cam, 1, i / 120, { x: 0, y: 0, z: 0 }), []);
+    if (c && tc < 0) tc = i;
+    if (tc >= 0 && sys.pose.h.x > 2.6 - 0.02) held++;
+  }
+  assert.ok(tc >= 0, 'contact');
+  assert.ok(held / 120 >= 0.18, `held ${(held / 120).toFixed(2)} s against the wall`);
 });

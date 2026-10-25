@@ -80,7 +80,7 @@ async function ensureLoaded() {
       core = c;
       session = new Session(core, audio, save, {
         onRoundEnd: (res) => showResult(res), onToast: toast, onObjective: (a, b) => { $('roundlabel').textContent = a; $('objective').textContent = b; },
-        onHint: (h) => { $('hint').textContent = h; }, onBites: (n) => { $('bites').textContent = n ? '●'.repeat(Math.min(n, 8)) + ' beten' : ''; },
+        onHint: (h) => { $('hint').textContent = h; }, onCaught: (n, total) => { $('bites').textContent = total ? `☺ ${n} van ${total} gevangen` : n ? `☺ ${n} gevangen` : ''; },
         onDoorCtx: (label) => { const b = $('door'); b.hidden = !label; if (label) b.textContent = label; $('crosshair').classList.toggle('target', !!label); },
       });
       c.input.onStick = (on, ox, oy, dx, dy) => {
@@ -90,7 +90,7 @@ async function ensureLoaded() {
       c.input.onStance = showStance; showStance(0);
       applySettings();
       $('loadbar').hidden = true;
-      (window as unknown as { muggenjacht: unknown }).muggenjacht = diagnostics();
+      (window as unknown as { smileyjacht: unknown }).smileyjacht = diagnostics();
     })();
   }
   await loading;
@@ -99,7 +99,7 @@ async function ensureLoaded() {
 /** WebGL context lost (iOS: app switch, locking, memory pressure). Pause and restart the page cleanly once the browser
  * gives the context back - Babylon's own restore left a blank view (REVIEW-01 G-04). The interrupted round is offered
  * again after the reload (progress of finished rounds is saved already). */
-const RESUME_KEY = 'muggenjacht-hervat';
+const RESUME_KEY = 'smileyjacht-hervat';
 let lost = false;
 function contextLost() {
   if (lost) return;
@@ -206,10 +206,10 @@ if (import.meta.env.DEV) {
   (window as unknown as { mjDev: unknown }).mjDev = {
     get core() { return core; }, get session() { return session; },
     view(x: number, z: number, yaw: number, pitch = 0) { core?.placePlayer(x, z, yaw, pitch); return core ? [core.player.x, core.player.y, core.player.z] : null; },
-    /** Put mosquito i on the nearest surface to (x,y,z) and look at it from `dist` metres (visual checks). */
-    lookAtMosquito(i: number, x: number, y: number, z: number, dist = 0.4) {
+    /** Put smiley i on the nearest surface to (x,y,z) and look at it from `dist` metres (visual checks). */
+    lookAtSmiley(i: number, x: number, y: number, z: number, dist = 0.4) {
       if (!core || !session) return null;
-      const m = session.mosq[i]; if (!m) return null;
+      const m = session.smileys[i]; if (!m) return null;
       const bvh = core.world.bvh, hit = { t: 0, tri: 0, nx: 0, ny: 0, nz: 0 };
       let best = Infinity, sp: number[] = [], nrm: number[] = [], tri = 0;
       for (const [dx, dy, dz] of [[0, 0, 1], [0, 0, -1], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]]) {
@@ -302,10 +302,10 @@ if (import.meta.env.DEV) {
       if (!core) return null;
       const { ROUNDS } = await import('./game/rounds');
       const { roomAt } = await import('./engine/world');
-      const { planStrike } = await import('./swatter/swing');
+      const { planStrike } = await import('./net/swing');
       const bvh = core.world.bvh, hit = { t: 0, tri: 0, nx: 0, ny: 0, nz: 0 };
       const out: unknown[] = [];
-      for (const r of ROUNDS) for (const s of r.mosquitoes) {
+      for (const r of ROUNDS) for (const s of r.smileys) {
         if (!s.near || !s.resting) continue;
         const [px, py, pz] = s.near;
         let best = Infinity, sp: number[] = [], nrm: number[] = [];
@@ -341,21 +341,23 @@ if (import.meta.env.DEV) {
       }
       return out;
     },
-    /** Technical (not a listening) check: render the buzz worklet offline and measure level and harmonic peaks. */
-    async audioCheck(freq = 450) {
-      const sr = 48000, ctx = new OfflineAudioContext(1, sr, sr);
-      await ctx.audioWorklet.addModule(import.meta.env.BASE_URL + 'audio/buzz-worklet.js');
-      const n = new AudioWorkletNode(ctx, 'mosquito-buzz', { processorOptions: { seed: 7 }, outputChannelCount: [1] });
-      n.parameters.get('freq')!.setValueAtTime(freq, 0); n.parameters.get('amp')!.setValueAtTime(1, 0); n.parameters.get('effort')!.setValueAtTime(0.3, 0);
+    /** Technical (not a listening) check: render the flutter worklet offline; level and the beat rate from the envelope. */
+    async audioCheck(rate = 8) {
+      const sr = 48000, ctx = new OfflineAudioContext(1, sr * 2, sr);
+      await ctx.audioWorklet.addModule(import.meta.env.BASE_URL + 'audio/flutter-worklet.js');
+      const n = new AudioWorkletNode(ctx, 'smiley-flutter', { processorOptions: { seed: 7 }, outputChannelCount: [1] });
+      n.parameters.get('rate')!.setValueAtTime(rate, 0); n.parameters.get('amp')!.setValueAtTime(1, 0); n.parameters.get('effort')!.setValueAtTime(0.5, 0);
       n.connect(ctx.destination);
       const buf = await ctx.startRendering();
       const x = buf.getChannelData(0).slice(sr / 2);             // skip the fade-in
       const rms = Math.sqrt(x.reduce((a, v) => a + v * v, 0) / x.length);
-      const mag = (f: number) => { let re = 0, im = 0; for (let i = 0; i < x.length; i++) { const w = 2 * Math.PI * f * i / sr; re += x[i] * Math.cos(w); im -= x[i] * Math.sin(w); } return Math.hypot(re, im) / x.length; };
-      let best = 0, f0 = 0;
-      for (let f = freq * 0.85; f <= freq * 1.2; f += 1) { const m = mag(f); if (m > best) { best = m; f0 = f; } }
-      const harmonics = [1, 2, 3, 4, 5].map((k) => Math.round(mag(f0 * k) / best * 100) / 100);
-      return { rms: Math.round(rms * 1000) / 1000, fundamentalHz: f0, harmonicsRel: harmonics, note: 'technische meting, geen luistertest' };
+      // envelope in 5 ms blocks, then its strongest periodicity between 3 and 20 Hz
+      const B = sr / 200, env: number[] = [];
+      for (let i = 0; i + B <= x.length; i += B) { let e = 0; for (let k = 0; k < B; k++) e += x[i + k] * x[i + k]; env.push(Math.sqrt(e / B)); }
+      const mean = env.reduce((a, v) => a + v, 0) / env.length;
+      let best = 0, beatHz = 0;
+      for (let f = 3; f <= 20; f += 0.1) { let re = 0, im = 0; env.forEach((e, i) => { const w = 2 * Math.PI * f * i / 200; re += (e - mean) * Math.cos(w); im -= (e - mean) * Math.sin(w); }); const m = Math.hypot(re, im); if (m > best) { best = m; beatHz = f; } }
+      return { rms: Math.round(rms * 1000) / 1000, beatHz: Math.round(beatHz * 10) / 10, note: 'technische meting, geen luistertest' };
     },
     /** Which mesh/material is visible at a CSS pixel (dev picking; makes meshes pickable temporarily). */
     async pickAt(x: number, y: number) {

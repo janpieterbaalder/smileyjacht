@@ -32,7 +32,7 @@ export const TIPTOE = 0.08;
 export function lookTiptoe(pitch: number): number { return TIPTOE * smooth(0.45, 0.9, pitch); }
 
 /** Raising the arm lifts the shoulder joint with the shoulder blade (elevation and upward rotation of the scapula, a
- * few cm at full overhead reach): the joint centre rises with the arm's elevation. Without it a mosquito on the
+ * few cm at full overhead reach): the joint centre rises with the arm's elevation. Without it a smiley on the
  * 2.31 m ceiling stayed 9 cm out of reach even straight overhead. */
 export const SHOULDER_LIFT = 0.07;
 export function shoulderLift(S: P3, wrist: P3): number {
@@ -45,7 +45,7 @@ export function shoulderLift(S: P3, wrist: P3): number {
 export const HAND = {
   wrist: { x: -0.0789, y: 0.0293, z: -0.0225 },
   forearm: { x: -0.9393, y: 0.3281, z: 0.0997 },
-  gripFromHead: 0.4005, neck: 0.0805,
+  gripFromHead: 0.40, neck: 0.112,
 };
 
 /** Comfortable wrist range (deg): flexion/extension and radial/ulnar deviation; forearm roll (pronation/supination)

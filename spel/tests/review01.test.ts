@@ -2,25 +2,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { room } from './helpers';
-import { MosquitoBrain, ESCAPE_PER_SWING } from '../src/mosquito/brain';
+import { SmileyBrain, ESCAPE_PER_SWING } from '../src/smiley/brain';
 import { PlayerBody } from '../src/physics/player';
 import { ImageProcessingConfiguration } from '@babylonjs/core/Materials/imageProcessingConfiguration';
 import { setImageProcessingQuiet } from '../src/engine/imageprocessing';
-import { mosquitoRoom } from '../src/game/session';
-import { clearArmPole, solveArm, ARM_CLEAR } from '../src/swatter/armgeom';
+import { smileyRoom } from '../src/game/session';
+import { clearArmPole, solveArm, ARM_CLEAR } from '../src/net/armgeom';
 
 const noDoor = (_ox: number, _oy: number, _oz: number, _dx: number, _dy: number, _dz: number, max: number) => max;
 
-test('G-02: a resting mosquito decides once per swing whether it escapes (not every frame)', () => {
+test('G-02: a resting smiley decides once per swing whether it escapes (not every frame)', () => {
   const trials = 600, alert = 1.0;
   let escaped = 0;
   for (let k = 0; k < trials; k++) {
-    const b = new MosquitoBrain(room(), { alert, hostDrive: 0, restMin: 99, restMax: 99, speed: 0.5 }, k, noDoor);
+    const b = new SmileyBrain(room(), { alert, restMin: 99, restMax: 99, speed: 0.5 }, k, noDoor);
     b.placeResting(0.0, 1.5, 2, 1, 0, 0, 0, 0);                  // on the west wall, facing +x
-    // the swatter head lingers 0.3 m in front of it for 0.2 s (slow end of the approach), then strikes
+    // the net lingers 0.5 m in front of it for 0.2 s (slow end of the approach), then sweeps in
     for (let i = 0; i < 30 && b.state === 'rest'; i++) {
       const strike = i >= 12;
-      const x = strike ? 0.3 - (i - 12) * 0.018 : 0.3, vx = strike ? -1.1 : -0.35;
+      const x = strike ? 0.5 - (i - 12) * 0.03 : 0.5, vx = strike ? -1.8 : -0.5;
       b.update(1 / 60, { x: 1.5, y: 1.6, z: 2 }, { x, y: 1.5, z: 2, vx, vy: 0, vz: 0, active: true, swing: 1 }, [0, 0, 4, 4], 0);
     }
     if (b.state === 'evade') escaped++;
@@ -41,11 +41,11 @@ test('G-03: exposure and white balance per frame without notifying materials', (
   assert.equal(n, 1);
 });
 
-test('G-09: a mosquito on the inside of a window pane counts for the room, not for outside', () => {
+test('G-09: a smiley on the inside of a window pane counts for the room, not for outside', () => {
   // window glass of the living room's south wall lies at z ~ -0.03, outside the room box (z1 = -0.08)
   const onPane = { state: 'rest', x: 4.2, z: -0.03, nx: 0, nz: -1 };
-  assert.equal(mosquitoRoom(onPane), 'woon');
-  assert.equal(mosquitoRoom({ state: 'fly', x: 4.2, z: 0.6, nx: 0, nz: 0 }), 'buiten');
+  assert.equal(smileyRoom(onPane), 'woon');
+  assert.equal(smileyRoom({ state: 'fly', x: 4.2, z: 0.6, nx: 0, nz: 0 }), 'buiten');
 });
 
 test('G-10: with a wall at the right the elbow swings inward, arm clear of the wall', () => {

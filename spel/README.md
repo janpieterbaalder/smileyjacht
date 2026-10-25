@@ -1,4 +1,4 @@
-# Nog één mug — browsergame (G1)
+# Nog één smiley — browsergame
 
 Babylon.js 9.27, TypeScript 7, Vite 8. Alleen `dist/` hoort in een oplevering; bronfoto's en dossier nooit.
 
@@ -12,9 +12,13 @@ npm run build     # tsc --noEmit && vite build -> dist/
 ## Structuur
 - `src/game/` — core (engine, camera, beweging, houding, deuren), doors (deurbladen: onderlinge botsing, opzij duwen), session (ronde-runtime), rounds (10 rondes + oefenen), save.
 - `src/engine/` — world (GLB, lichtkaarten, probes, hemel, deuren), lightmap (gebakken irradiantie-plugin), whitebalance, cloth (gordijnen als hangend doek: geven mee bij een klap of als je erlangs loopt), curtains (koppeling met de gordijnmeshes).
-- `src/physics/` — driehoeks-BVH, spelerscapsule (+ `POSTURE`: zelf gekozen houding). `src/swatter/` — slag + continue botsing, hand/mouw/mepper-weergave.
-- `src/mosquito/` — gedrag en model. `src/audio/` — Web Audio. `public/audio/buzz-worklet.js` — zoemsynthese.
-- `src/input/` — duimen, muis en toetsen; de hoogteschuif boven 'Sla' (omlaag bukken tot op handen en knieën, omhoog op de tenen en dan opstappen op bed, stoel of bank; laptop: Q/Z of muiswiel).
+- `src/physics/` — driehoeks-BVH, spelerscapsule (+ `POSTURE`: zelf gekozen houding).
+- `src/net/` — het vlindernet: zwaai + continue botsing van beugel en steel, vangen (`swing.ts`: in de lucht door de
+  opening, of de beugel over een stilzittende smiley), de netzak als doeksimulatie (`bag.ts`), hand/mouw/net-weergave.
+- `src/smiley/` — gedrag (`brain.ts`: vlindervlucht met kracht per vleugelslag, fladderen en zweven, grillige koers,
+  landen alleen waar de schijf plat ligt, vleugels waaieren in rust, vluchten voor het net) en model (`visual.ts`).
+- `src/audio/` — Web Audio. `public/audio/flutter-worklet.js` — zacht vleugelgefladder.
+- `src/input/` — duimen, muis en toetsen; de hoogteschuif boven 'Vang' (omlaag bukken tot op handen en knieën, omhoog op de tenen en dan opstappen op bed, stoel of bank; laptop: Q/Z of muiswiel).
 - `public/assets/` — gegenereerd door `hulpmiddelen/chalet/pipeline.py` (chalet.glb, chalet_coll.bin, lm/, probes/, sky/) en `hulpmiddelen/chalet/bl/hand.py` (arm.glb).
 
 ## Buitentafel: aanpassing in de gegenereerde bestanden

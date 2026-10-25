@@ -5,7 +5,7 @@ export interface SaveData {
   settings: { sound: boolean; volume: number; leftHanded: boolean; sensitivity: number; invertY: boolean; headBob: boolean; help: 'uit' | 'licht' | 'veel'; quality: string };
   progress: { completed: string[]; records: Record<string, RoundRecord>; lastRound: number };
 }
-const KEY = 'muggenjacht-save';
+const KEY = 'smileyjacht-save';
 
 export function defaults(): SaveData {
   return {
@@ -63,7 +63,7 @@ export class Save {
   }
   exportFile() {
     const url = URL.createObjectURL(new Blob([JSON.stringify(this.data, null, 1)], { type: 'application/json' }));
-    const a = document.createElement('a'); a.href = url; a.download = 'nog-een-mug-voortgang.json'; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = 'nog-een-smiley-voortgang.json'; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
   importText(t: string): boolean { const d = parseSave(t); if (!d) return false; this.data = d; this.write(); return true; }

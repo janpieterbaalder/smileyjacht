@@ -1,41 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <radialGradient id="night" cx="35%" cy="22%" r="95%">
-      <stop stop-color="#405c4e"/><stop offset=".55" stop-color="#233c31"/><stop offset="1" stop-color="#101e1a"/>
+    <radialGradient id="sky" cx="35%" cy="22%" r="95%">
+      <stop stop-color="#4f6b5a"/><stop offset=".55" stop-color="#2c4538"/><stop offset="1" stop-color="#14231d"/>
     </radialGradient>
-    <linearGradient id="moon" x2=".8" y2="1">
-      <stop stop-color="#fff0c9"/><stop offset="1" stop-color="#d7b77d"/>
-    </linearGradient>
-    <linearGradient id="wing" x2=".7" y2="1">
-      <stop stop-color="#fffaf0"/><stop offset="1" stop-color="#bad1bf"/>
-    </linearGradient>
-    <linearGradient id="body" x2="1" y2=".5">
-      <stop stop-color="#e7be78"/><stop offset=".45" stop-color="#ffe7ad"/><stop offset="1" stop-color="#bd8a49"/>
+    <radialGradient id="face" cx="42%" cy="36%" r="62%">
+      <stop stop-color="#ffe866"/><stop offset=".7" stop-color="#ffcf1f"/><stop offset="1" stop-color="#eaa90c"/>
+    </radialGradient>
+    <linearGradient id="wing" x2="1" y2=".3">
+      <stop stop-color="#ffb02e"/><stop offset=".45" stop-color="#ffe27a"/><stop offset="1" stop-color="#fff4c4"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="108" fill="url(#night)"/>
+  <rect width="512" height="512" rx="108" fill="url(#sky)"/>
   <rect x="12" y="12" width="488" height="488" rx="98" fill="none" stroke="#e8e2d0" stroke-opacity=".12" stroke-width="2"/>
-  <!-- Warm crescent, recalling the evening in the chalet. -->
-  <path d="M360 91a153 153 0 1 0 56 247A166 166 0 0 1 360 91Z" fill="url(#moon)"/>
-  <!-- One mosquito, rising diagonally across the moon. -->
-  <g transform="translate(266 263) rotate(35)">
-    <g fill="none" stroke="#13291f" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M-11-20-61-52-83-102M-14 7-72 6-104-25M-13 28-64 63-76 109M11-20 61-52 83-102M14 7 72 6 104-25M13 28 64 63 76 109"/>
-    </g>
-    <g fill="none" stroke="#f0d79f" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M-11-20-61-52-83-102M-14 7-72 6-104-25M-13 28-64 63-76 109M11-20 61-52 83-102M14 7 72 6 104-25M13 28 64 63 76 109"/>
-    </g>
-    <g fill="url(#wing)" stroke="#183428" stroke-width="6">
-      <path d="M-9-8C-128-132-133-14-18 24-7 23-4 5-9-8Z"/>
-      <path d="M9-8C128-132 133-14 18 24 7 23 4 5 9-8Z"/>
-    </g>
-    <g fill="none" stroke="#718f7e" stroke-width="3" stroke-linecap="round" opacity=".65">
-      <path d="M-18 9-80-46M18 9 80-46"/>
-    </g>
-    <path d="M-15 10C-30 53-16 100 0 121 16 100 30 53 15 10Z" fill="url(#body)" stroke="#183428" stroke-width="6"/>
-    <path d="M-16 53h32M-13 73h26M-8 92H8" fill="none" stroke="#866539" stroke-width="5"/>
-    <ellipse cy="-5" rx="22" ry="30" fill="#173328" stroke="#edcf92" stroke-width="6"/>
-    <path d="M0-60V-115M-9-57-28-80M9-57 28-80" fill="none" stroke="#f4dfb2" stroke-width="6" stroke-linecap="round"/>
-    <circle cy="-45" r="17" fill="url(#body)" stroke="#183428" stroke-width="5"/>
+  <!-- the net's hoop, behind the smiley -->
+  <ellipse cx="256" cy="262" rx="196" ry="196" fill="none" stroke="#efe9da" stroke-opacity=".55" stroke-width="10"/>
+  <path d="M256 458 L256 500" stroke="#c49a63" stroke-width="22" stroke-linecap="round"/>
+  <!-- butterfly wings -->
+  <g fill="url(#wing)" stroke="#5a3a12" stroke-width="8" stroke-linejoin="round">
+    <path d="M206 236 C150 130 46 110 40 176 C34 236 90 268 156 280 C98 300 86 362 132 380 C176 396 210 330 214 290 Z"/>
+    <path d="M306 236 C362 130 466 110 472 176 C478 236 422 268 356 280 C414 300 426 362 380 380 C336 396 302 330 298 290 Z"/>
   </g>
+  <!-- antennae -->
+  <g stroke="#2b1a08" stroke-width="7" fill="none" stroke-linecap="round">
+    <path d="M236 176 C226 136 212 112 196 98"/><path d="M276 176 C286 136 300 112 316 98"/>
+  </g>
+  <circle cx="194" cy="96" r="11" fill="#2b1a08"/><circle cx="318" cy="96" r="11" fill="#2b1a08"/>
+  <!-- the smiley -->
+  <circle cx="256" cy="262" r="92" fill="url(#face)" stroke="#d4930a" stroke-width="6"/>
+  <ellipse cx="224" cy="238" rx="11" ry="20" fill="#2b1a08"/><ellipse cx="288" cy="238" rx="11" ry="20" fill="#2b1a08"/>
+  <path d="M204 282 Q256 336 308 282" fill="none" stroke="#2b1a08" stroke-width="11" stroke-linecap="round"/>
 </svg>

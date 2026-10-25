@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allocSleeve, buildSleeve, buildTorso, solveArm, SLEEVE, BODY } from '../src/swatter/armgeom';
+import { allocSleeve, buildSleeve, buildTorso, solveArm, SLEEVE, BODY } from '../src/net/armgeom';
 
 const P = (x: number, y: number, z: number) => ({ x, y, z });
 const dist = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);

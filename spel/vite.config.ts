@@ -16,7 +16,7 @@ function assetHash(): string {
 // Relative base: the build runs from any HTTPS path or the LAN preview. Only game files end up in dist/.
 export default defineConfig({
   base: './',
-  define: { __MJ_BUILD__: JSON.stringify(`G1-kandidaat-02 · ${assetHash()}`) },
+  define: { __MJ_BUILD__: JSON.stringify(`Smileyjacht-01 · ${assetHash()}`) },
   build: {
     target: 'es2022',
     assetsInlineLimit: 0,

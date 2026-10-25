@@ -20,7 +20,7 @@ export class Metrics {
       summary: this.summary(), frames: this.frames, events: this.events, ...extra,
     };
     const url = URL.createObjectURL(new Blob([JSON.stringify(log)], { type: 'application/json' }));
-    const a = document.createElement('a'); a.href = url; a.download = `muggenjacht-diagnose-${Date.now()}.json`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `smileyjacht-diagnose-${Date.now()}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
 }
