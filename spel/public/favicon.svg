@@ -3,30 +3,35 @@
     <radialGradient id="sky" cx="35%" cy="22%" r="95%">
       <stop stop-color="#4f6b5a"/><stop offset=".55" stop-color="#2c4538"/><stop offset="1" stop-color="#14231d"/>
     </radialGradient>
-    <radialGradient id="face" cx="42%" cy="36%" r="62%">
-      <stop stop-color="#ffe866"/><stop offset=".7" stop-color="#ffcf1f"/><stop offset="1" stop-color="#eaa90c"/>
+    <radialGradient id="face" cx="40%" cy="34%" r="70%">
+      <stop stop-color="#ffe866"/><stop offset=".65" stop-color="#ffcf1f"/><stop offset="1" stop-color="#e9a50b"/>
     </radialGradient>
-    <linearGradient id="wing" x2="1" y2=".3">
-      <stop stop-color="#ffb02e"/><stop offset=".45" stop-color="#ffe27a"/><stop offset="1" stop-color="#fff4c4"/>
+    <linearGradient id="shadeL" x1="1" x2="0">
+      <stop stop-color="#000" stop-opacity=".18"/><stop offset=".35" stop-color="#000" stop-opacity="0"/>
     </linearGradient>
+    <linearGradient id="shadeR" x1="0" x2="1">
+      <stop stop-color="#000" stop-opacity=".10"/><stop offset=".35" stop-color="#000" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="left"><rect x="-200" y="-200" width="200" height="400"/></clipPath>
+    <clipPath id="right"><rect x="0" y="-200" width="200" height="400"/></clipPath>
+    <!-- the whole smiley, centred on 0,0; each half shows its part of it -->
+    <g id="smiley">
+      <circle r="150" fill="url(#face)" stroke="#c98a08" stroke-width="7"/>
+      <ellipse cx="-52" cy="-38" rx="18" ry="33" fill="#2b1a08"/><ellipse cx="52" cy="-38" rx="18" ry="33" fill="#2b1a08"/>
+      <circle cx="-58" cy="-50" r="6" fill="#fff" fill-opacity=".85"/><circle cx="46" cy="-50" r="6" fill="#fff" fill-opacity=".85"/>
+      <path d="M-86 30 Q0 112 86 30" fill="none" stroke="#2b1a08" stroke-width="17" stroke-linecap="round"/>
+    </g>
   </defs>
   <rect width="512" height="512" rx="108" fill="url(#sky)"/>
   <rect x="12" y="12" width="488" height="488" rx="98" fill="none" stroke="#e8e2d0" stroke-opacity=".12" stroke-width="2"/>
-  <!-- the net's hoop, behind the smiley -->
-  <ellipse cx="256" cy="262" rx="196" ry="196" fill="none" stroke="#efe9da" stroke-opacity=".55" stroke-width="10"/>
-  <path d="M256 458 L256 500" stroke="#c49a63" stroke-width="22" stroke-linecap="round"/>
-  <!-- butterfly wings -->
-  <g fill="url(#wing)" stroke="#5a3a12" stroke-width="8" stroke-linejoin="round">
-    <path d="M206 236 C150 130 46 110 40 176 C34 236 90 268 156 280 C98 300 86 362 132 380 C176 396 210 330 214 290 Z"/>
-    <path d="M306 236 C362 130 466 110 472 176 C478 236 422 268 356 280 C414 300 426 362 380 380 C336 396 302 330 298 290 Z"/>
+  <!-- the net: hoop and a hint of netting, handle down to the corner -->
+  <path d="M352 438 L430 500" stroke="#c49a63" stroke-width="20" stroke-linecap="round"/>
+  <ellipse cx="300" cy="352" rx="96" ry="96" fill="#efe9da" fill-opacity=".07" stroke="#efe9da" stroke-opacity=".6" stroke-width="9"/>
+  <!-- the smiley, folded down the middle: both halves raised a little, like a butterfly's wings -->
+  <g transform="translate(236 236)">
+    <g clip-path="url(#left)" transform="skewY(7) scale(.9 1)"><use href="#smiley"/><rect x="-150" y="-150" width="150" height="300" fill="url(#shadeL)"/></g>
+    <g clip-path="url(#right)" transform="skewY(-7) scale(.9 1)"><use href="#smiley"/><rect x="0" y="-150" width="150" height="300" fill="url(#shadeR)"/></g>
+    <!-- the fold -->
+    <path d="M0 -150 L0 150" stroke="#9a6406" stroke-opacity=".55" stroke-width="4"/>
   </g>
-  <!-- antennae -->
-  <g stroke="#2b1a08" stroke-width="7" fill="none" stroke-linecap="round">
-    <path d="M236 176 C226 136 212 112 196 98"/><path d="M276 176 C286 136 300 112 316 98"/>
-  </g>
-  <circle cx="194" cy="96" r="11" fill="#2b1a08"/><circle cx="318" cy="96" r="11" fill="#2b1a08"/>
-  <!-- the smiley -->
-  <circle cx="256" cy="262" r="92" fill="url(#face)" stroke="#d4930a" stroke-width="6"/>
-  <ellipse cx="224" cy="238" rx="11" ry="20" fill="#2b1a08"/><ellipse cx="288" cy="238" rx="11" ry="20" fill="#2b1a08"/>
-  <path d="M204 282 Q256 336 308 282" fill="none" stroke="#2b1a08" stroke-width="11" stroke-linecap="round"/>
 </svg>
